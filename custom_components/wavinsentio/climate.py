@@ -1,9 +1,10 @@
 from datetime import timedelta
 import logging
+import inspect
 
 from homeassistant.core import callback
 from homeassistant.components.climate import ClimateEntity
-from homeassistant.const import CONF_IP_ADDRESS
+from homeassistant.const import CONF_HOST, CONF_PORT, CONF_TYPE, CONF_SLAVE
 
 from homeassistant.const import (
     ATTR_TEMPERATURE,
@@ -12,6 +13,7 @@ from homeassistant.const import (
 
 from homeassistant.components.climate.const import (
     HVAC_MODE_HEAT,
+    HVAC_MODE_COOL,
     HVAC_MODE_OFF,
     CURRENT_HVAC_HEAT,
     CURRENT_HVAC_IDLE,
@@ -29,10 +31,11 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 
-from .const import DOMAIN, CONF_LOCATION_ID
+from .const import DOMAIN
 
 #from WavinSentioInterface.SentioApi import SentioApi, NoConnectionPossible
-from .SentioModbus.SentioApi.SentioApi import SentioModbus, NoConnectionPossible 
+from .SentioModbus.SentioApi.SentioApi import SentioModbus, NoConnectionPossible, ModbusType
+from .SentioModbus.SentioApi.SentioTypes import SentioHeatingStates
 
 PRESET_MODES = {
     "Eco": {"profile": "eco"},
@@ -44,15 +47,26 @@ SUPPORT_FLAGS = SUPPORT_TARGET_TEMPERATURE | SUPPORT_PRESET_MODE
 
 _LOGGER = logging.getLogger(__name__)
 
-UPDATE_DELAY = timedelta(seconds=120)
+UPDATE_DELAY = timedelta(seconds=30)
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    _LOGGER.error("---------- SB ------------- Inititalize Climate ")
-    try:
-        _LOGGER.error("---------- SB ----------- entry.data ip {0}".format(entry.data[CONF_IP_ADDRESS]))
+    _LOGGER.error("Printing HASS Object Start")
+    _LOGGER.error(hass)
+    _LOGGER.error("Printing HASS Object Done")
+        # Forward the setup to the sensor platform.
+    if entry.data[CONF_TYPE] == "Network":
+        modbusType = ModbusType.MODBUS_TCPIP
+        baud = 0
+    elif entry.data[CONF_TYPE] == "Serial":
+        modbusType = ModbusType.MODBUS_RTU
+        baud = 0 #TODO
+    else:
+        raise ConfigEntryAuthFailed("Failed to detect connection type")
+
+    try:      
         api = await hass.async_add_executor_job(
-            SentioModbus, entry.data[CONF_IP_ADDRESS]#, entry.data[CONF_PASSWORD]
+            SentioModbus, modbusType, entry.data[CONF_HOST], entry.data[CONF_PORT], entry.data[CONF_SLAVE], baud, logging.DEBUG
         )
 
         status = await hass.async_add_executor_job(api.connect)
@@ -63,18 +77,17 @@ async def async_setup_entry(hass, entry, async_add_entities):
         raise ConfigEntryAuthFailed(err) from err
 
     rooms = await hass.async_add_executor_job(
-        api.getRooms, entry.data[CONF_LOCATION_ID]
+        api.detectRooms
     )
 
     dataservice = WavinSentioClimateDataService(
-        hass, api, entry.data[CONF_LOCATION_ID], rooms
+        hass, api, rooms
     )
     dataservice.async_setup()
     await dataservice.coordinator.async_refresh()
 
     entities = []
     for room in rooms:
-        _LOGGER.debug("---------- SB ----------- Room Found : {0}".format(room))
         ws = WavinSentioEntity(hass, room, dataservice)
         entities.append(ws)
     async_add_entities(entities)
@@ -87,10 +100,9 @@ async def async_setup_entry(hass, entry, async_add_entities):
 class WavinSentioClimateDataService:
     """Get and update the latest data."""
 
-    def __init__(self, hass, api, location_id, roomdata):
+    def __init__(self, hass, api, roomdata):
         """Initialize the data object."""
         self.api = api
-        self.location_id = location_id
 
         self.roomdata = roomdata
 
@@ -100,7 +112,7 @@ class WavinSentioClimateDataService:
     @callback
     def async_setup(self):
         """Coordinator creation."""
-        _LOGGER.debug("----- SB ----- Here we should update the data from the api?")
+        _LOGGER.error("----- SB ----- Here we should update the data from the api?")
         self.coordinator = DataUpdateCoordinator(
             self.hass,
             _LOGGER,
@@ -115,25 +127,26 @@ class WavinSentioClimateDataService:
         return UPDATE_DELAY
 
     async def async_update_data(self):
+        _LOGGER.debug("Auto update self called")
         try:
             self.roomdata = await self.hass.async_add_executor_job(
-                self.api.getRooms(), self.location_id
+                self.api.updateRoomData
             )
         except KeyError as ex:
             raise UpdateFailed("Missing overview data, skipping update") from ex
 
     def get_room(self, code):
         for entry in self.roomdata:
-            if code == entry["code"]:
+            if code == entry.index:
                 return entry
         return None
 
     def set_new_temperature(self, code, temperature):
-        _LOGGER.debug("Setting temperature: %s", temperature)
+        _LOGGER.error("Setting temperature: %s", temperature)
         self.hass.async_add_executor_job(self.api.set_temperature, code, temperature)
 
     def set_new_profile(self, code, profile):
-        _LOGGER.debug("Setting profile: %s", profile)
+        _LOGGER.error("Setting profile: %s", profile)
         self.hass.async_add_executor_job(self.api.set_profile, code, profile)
 
 
@@ -145,13 +158,13 @@ class WavinSentioEntity(CoordinatorEntity, ClimateEntity):
     def __init__(self, hass, room, dataservice):
         super().__init__(dataservice.coordinator)
         """Initialize the climate device."""
-        _LOGGER.debug("----- SB --- Init Climate Device: {0}".format(room))
-        self._name = room["name"]
-        self._roomcode = room["code"]
+        _LOGGER.error("----- SB --- Init Climate Device: {0}".format(room))
+        self._name = room.name
+        self._roomcode = room.index
         self._hvac_mode = (
-            HVAC_MODE_HEAT if room["status"] == "heating" else HVAC_MODE_OFF
+            HVAC_MODE_HEAT if room.heatingState == SentioHeatingStates.HEATING else HVAC_MODE_OFF
         )
-        self._hvac_modes = [HVAC_MODE_HEAT]
+        self._hvac_modes = [HVAC_MODE_HEAT,HVAC_MODE_COOL]
         self._support_flags = SUPPORT_FLAGS
         self._preset_mode = None
         self._operation_list = None  # = [STATE_AUTO, STATE_MANUAL]
@@ -184,50 +197,57 @@ class WavinSentioEntity(CoordinatorEntity, ClimateEntity):
     @property
     def current_temperature(self):
         """Return the current temperature."""
+        #_LOGGER.error("Calling function {0}".format(inspect.stack()[0][3]))
         temp_room = self._dataservice.get_room(self._roomcode)
         if temp_room is not None:
-            return self._dataservice.get_room(self._roomcode)["tempCurrent"]
+            return temp_room.getRoomActualTemperature()
 
     @property
     def current_humidity(self):
         """Return the current humidity."""
+        #_LOGGER.error("Calling function {0}".format(inspect.stack()[0][3]))
         temp_room = self._dataservice.get_room(self._roomcode)
         if temp_room is not None:
-            return temp_room["humidityCurrent"]
+            return temp_room.getRoomRelativeHumidity()
 
     @property
     def target_temperature(self):
         """Return the temperature we try to reach."""
+        #_LOGGER.error("Calling function {0}".format(inspect.stack()[0][3]))
         temp_room = self._dataservice.get_room(self._roomcode)
         if temp_room is not None:
-            return temp_room["tempDesired"]
+            return temp_room.getRoomSetpoint()
 
     @property
     def min_temp(self):
         """Return the minimum temperature."""
+        _LOGGER.error("Calling function {0}".format(inspect.stack()[0][3]))
         temp_room = self._dataservice.get_room(self._roomcode)
         if temp_room is not None:
-            return temp_room["tempSpan"]["minimum"]
+            return 0#temp_room["tempSpan"]["minimum"]
 
     @property
     def max_temp(self):
         """Return the maximum temperature."""
+        _LOGGER.error("Calling function {0}".format(inspect.stack()[0][3]))
         temp_room = self._dataservice.get_room(self._roomcode)
         if temp_room is not None:
-            return temp_room["tempSpan"]["maximum"]
+            return 0#temp_room["tempSpan"]["maximum"]
 
     @property
     def preset_mode(self):
         """Return the current preset mode."""
+        _LOGGER.error("Calling function {0}".format(inspect.stack()[0][3]))
         temp_room = self._dataservice.get_room(self._roomcode)
-        if temp_room is not None:
-            if temp_room["tempDesired"] == temp_room["tempEco"]:
-                return "Eco"
-            if temp_room["tempDesired"] == temp_room["tempComfort"]:
-                return "Comfort"
-            if temp_room["tempDesired"] == temp_room["tempExtra"]:
-                return "Extracomfort"
-        return self._preset_mode
+        return "ComfyName"
+        #if temp_room is not None:
+        #    if temp_room["tempDesired"] == temp_room["tempEco"]:
+        #        return "Eco"
+        #    if temp_room["tempDesired"] == temp_room["tempComfort"]:
+        #        return "Comfort"
+        #    if temp_room["tempDesired"] == temp_room["tempExtra"]:
+        #        return "Extracomfort"
+        #return self._preset_mode
 
     @property
     def preset_modes(self):
@@ -291,17 +311,19 @@ class WavinSentioEntity(CoordinatorEntity, ClimateEntity):
 
     @property
     def hvac_action(self):
+        _LOGGER.error("Calling function {0}".format(inspect.stack()[0][3]))
         """Return the current running hvac operation if supported"""
         temp_room = self._dataservice.get_room(self._roomcode)
-        if temp_room["status"] == "heating":
+        if temp_room.status == "heating":
             return CURRENT_HVAC_HEAT
         return CURRENT_HVAC_IDLE
 
     @property
     def hvac_mode(self):
+        _LOGGER.error("Calling function {0}".format(inspect.stack()[0][3]))
         temp_room = self._dataservice.get_room(self._roomcode)
         self._hvac_mode = (
-            HVAC_MODE_HEAT if temp_room["status"] == "heating" else HVAC_MODE_OFF
+            HVAC_MODE_HEAT if temp_room.status == "heating" else HVAC_MODE_OFF
         )
         # Return current operation mode ie. heat, cool, idle.
         return self._hvac_mode
@@ -343,11 +365,13 @@ class WavinSentioEntity(CoordinatorEntity, ClimateEntity):
         attrs = {}
         temp_room = self._dataservice.get_room(self._roomcode)
         if temp_room is not None:
-            attrs["current_temperature_floor"] = self._dataservice.get_room(
-                self._roomcode
-            )["tempFloorCurrent"]
-            attrs["current_temperature_air"] = self._dataservice.get_room(
-                self._roomcode
-            )["tempAirCurrent"]
+            _LOGGER.error("Floor and air TODO")
+
+            #attrs["current_temperature_floor"] = self._dataservice.get_room(
+            #    self._roomcode
+            #)["tempFloorCurrent"]
+            #attrs["current_temperature_air"] = self._dataservice.get_room(
+            #    self._roomcode
+            #)["tempAirCurrent"]
 
         return attrs

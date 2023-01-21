@@ -10,7 +10,8 @@
       "setup_network": {
         "data": {
           "host": "[%key:common::config_flow::data::host%]",
-          "port": "[%key:common::config_flow::data::port%]"
+          "port": "[%key:common::config_flow::data::port%]",
+          "slave": "Select Slave ID for device"
         },
         "title": "Select connection address"
       },

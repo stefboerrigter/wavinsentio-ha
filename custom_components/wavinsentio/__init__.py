@@ -6,9 +6,9 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, Unauthorized
 
 from .const import DOMAIN
 
-from homeassistant.const import CONF_IP_ADDRESS
+from homeassistant.const import CONF_HOST, CONF_PORT, CONF_TYPE, CONF_SLAVE
 
-from .SentioModbus.SentioApi.SentioApi import SentioModbus, NoConnectionPossible 
+from .SentioModbus.SentioApi.SentioApi import SentioModbus, NoConnectionPossible, ModbusType
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -18,6 +18,7 @@ async def async_setup_entry(
     """Set up platform from a ConfigEntry."""
     hass.data.setdefault(DOMAIN, {})
     hass_data = dict(entry.data)
+    _LOGGER.error("Setting up with data --> {0}".format(entry.data))
     # @TODO: Add setup code.
     # Registers update listener to update config entry when options are updated.
     # unsub_options_update_listener = entry.add_update_listener(options_update_listener)
@@ -26,15 +27,22 @@ async def async_setup_entry(
     hass.data[DOMAIN][entry.entry_id] = hass_data
 
     # Forward the setup to the sensor platform.
-    try:
-        _LOGGER.error("---------- SB ------------- Async Setup Entry ")
+    if entry.data[CONF_TYPE] == "Network":
+        modbusType = ModbusType.MODBUS_TCPIP
+        baud = 0
+    elif entry.data[CONF_TYPE] == "Serial":
+        modbusType = ModbusType.MODBUS_RTU
+        baud = 0 #TODO
+    else:
+        raise ConfigEntryAuthFailed("Failed to detect connection type")
+
+    try:      
         api = await hass.async_add_executor_job(
-            SentioModbus, entry.data[CONF_IP_ADDRESS]
+            SentioModbus, modbusType, entry.data[CONF_HOST], entry.data[CONF_PORT], entry.data[CONF_SLAVE], baud, logging.DEBUG
         )
-        _LOGGER.error("---------- SB ------------- Async Setup Entry - Start Connect ")
+        
         status = await hass.async_add_executor_job(api.connect)
 
-        _LOGGER.error("---------- SB ------------- Async Setup Entry -  Connect {0} ".format(status))
         if status != 0:
             raise ConfigEntryAuthFailed("Failed to connect")
 

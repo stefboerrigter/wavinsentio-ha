@@ -3,7 +3,7 @@ import logging
 
 from homeassistant.core import callback
 from homeassistant.components.sensor import SensorEntity
-from homeassistant.const import CONF_IP_ADDRESS
+from homeassistant.const import CONF_HOST, CONF_PORT, CONF_TYPE, CONF_SLAVE
 
 from homeassistant.const import TEMP_CELSIUS
 
@@ -18,35 +18,47 @@ from homeassistant.helpers.update_coordinator import (
 from .const import DOMAIN, CONF_LOCATION_ID
 
 #from WavinSentioInterface.SentioApi import SentioApi, NoConnectionPossible
-from .SentioModbus.SentioApi.SentioApi import SentioModbus, NoConnectionPossible 
+from .SentioModbus.SentioApi.SentioApi import SentioModbus, NoConnectionPossible, ModbusType
 
 _LOGGER = logging.getLogger(__name__)
 
-UPDATE_DELAY = timedelta(seconds=120)
+UPDATE_DELAY = timedelta(seconds=30)
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    _LOGGER.error("---------- SB ------------- Initialize Sensor")
-    try:
+    _LOGGER.error("Printing HASS Object Start")
+    _LOGGER.error(hass)
+    _LOGGER.error("Printing HASS Object Done")
+    
+    if entry.data[CONF_TYPE] == "Network":
+        modbusType = ModbusType.MODBUS_TCPIP
+        baud = 0
+    elif entry.data[CONF_TYPE] == "Serial":
+        modbusType = ModbusType.MODBUS_RTU
+        baud = 0 #TODO
+    else:
+        raise ConfigEntryAuthFailed("Failed to detect connection type")
+
+    try:      
         api = await hass.async_add_executor_job(
-            SentioModbus, entry.data[CONF_IP_ADDRESS]
+            SentioModbus, modbusType, entry.data[CONF_HOST], entry.data[CONF_PORT], entry.data[CONF_SLAVE], baud, logging.DEBUG
         )
 
         status = await hass.async_add_executor_job(api.connect)
 
         if status != 0:
             raise ConfigEntryAuthFailed("Failed to connect")
-
     except NoConnectionPossible as err:
         raise ConfigEntryAuthFailed(err) from err
-    _LOGGER.error("----- SB ------ Here it wants to get the location somewhat? and then something else?")
 
-    location = await hass.async_add_executor_job(
-        api.getOutdoorTemperature, entry.data[CONF_LOCATION_ID]
+
+    outdoor_temp = await hass.async_add_executor_job(
+        api.getOutdoorTemperature
     )
 
+    _LOGGER.error("Initial Reading outdoor Temp {0}".format(outdoor_temp))
     dataservice = WavinSentioSensorDataService(
-        hass, api, entry.data[CONF_LOCATION_ID], location
+        hass, api, outdoor_temp
     )
     dataservice.async_setup()
 
@@ -63,12 +75,11 @@ async def async_setup_entry(hass, entry, async_add_entities):
 class WavinSentioSensorDataService:
     """Get and update the latest data."""
 
-    def __init__(self, hass, api, location_id, location):
+    def __init__(self, hass, api, outdoor_temp):
         """Initialize the data object."""
         self.api = api
-        self.location_id = location_id
 
-        self.location = location
+        self.outdoor_temp = outdoor_temp
 
         self.hass = hass
         self.coordinator = None
@@ -90,14 +101,15 @@ class WavinSentioSensorDataService:
 
     async def async_update_data(self):
         try:
-            self.location = await self.hass.async_add_executor_job(
-                self.api.get_location, self.location_id
+            self.outdoor_temp = await self.hass.async_add_executor_job(
+                self.api.getOutdoorTemperature
             )
+            _LOGGER.error("Reading outdoor Temp {0}".format(self.outdoor_temp))
         except KeyError as ex:
             raise UpdateFailed("Missing overview data, skipping update") from ex
 
-    def get_location(self):
-        return self.location
+    def get_outdoorTemp(self):
+        return self.outdoor_temp
 
 
 class WavinSentioOutdoorTemperatureSensor(CoordinatorEntity, SensorEntity):
@@ -118,15 +130,21 @@ class WavinSentioOutdoorTemperatureSensor(CoordinatorEntity, SensorEntity):
     def name(self) -> str:
         """Return the name of the sensor."""
         return "Outdoor Temperature" 
-        # self._dataservice.get_location()["name"]
+        #self._dataservice.outdoor_temp()["name"]
 
     @property
     def state(self):
         """Return the state of the sensor."""
-        self._state = self._dataservice.get_location()["attributes"]["outdoor"][
-            "temperature"
-        ]
+    #    #return self._dataservice.outdoor_temp()
+
+        #return int(self._dataservice.get_outdoorTemp())
+        self._state = self._dataservice.get_outdoorTemp()
         return self._state
+
+    @property
+    def native_value(self):
+        """Return the state."""
+        return self._dataservice.get_outdoorTemp()
 
     @property
     def unit_of_measurement(self) -> str:
@@ -140,12 +158,12 @@ class WavinSentioOutdoorTemperatureSensor(CoordinatorEntity, SensorEntity):
     @property
     def unique_id(self):
         """Return the ID of this device."""
-        return "SomeSerial"
-        #self._dataservice.get_location()["serialNumber"]
+        return "Invalid Serial"
+        #self._dataservice.get_outdoorTemp()["serialNumber"]
 
     @property
     def device_info(self):
-        temp_location = self._dataservice.get_location()
+        temp_location = self._dataservice.get_outdoorTemp()
         if temp_location is not None:
             return {
                 "identifiers": {

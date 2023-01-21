@@ -6,14 +6,14 @@ from homeassistant import config_entries
 import homeassistant.helpers.config_validation as cv
 
 from homeassistant import config_entries, core, exceptions
-from homeassistant.const import CONF_HOST, CONF_PORT, CONF_TYPE
+from homeassistant.const import CONF_HOST, CONF_PORT, CONF_TYPE, CONF_SLAVE
 from homeassistant.data_entry_flow import FlowResult
 
 import voluptuous as vol
 
-from .SentioModbus.SentioApi.SentioApi import SentioModbus, NoConnectionPossible 
+from .SentioModbus.SentioApi.SentioApi import SentioModbus, NoConnectionPossible, ModbusType
 
-from .const import DOMAIN, CONF_LOCATION_ID
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ class WavinSentioConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Step when user initializes a integration."""
         if user_input is not None:
             user_selection = user_input[CONF_TYPE]
-            if user_selection == "Serial":
+            if user_selection == "Serial": #Network
                 return await self.async_step_setup_serial()
 
             return await self.async_step_setup_network()
@@ -50,18 +50,23 @@ class WavinSentioConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Step when setting up network configuration."""
         errors: dict[str, str] = {}
         if user_input is not None:
-            data = await self.async_validate_wavin_sentio_connection(user_input, errors)
+            data = await self.async_validate_wavin_sentio_network_connection(user_input, errors)
             if not errors:
+                _LOGGER.info("Creating entry with: {0}".format(data))
+                _LOGGER.error("Creating entry with: {0}".format(data))
+                
                 return self.async_create_entry(
                     title=f"{data[CONF_HOST]}:{data[CONF_PORT]}", data=data
                 )
 
         schema = vol.Schema(
             {
-                vol.Required(CONF_HOST): str,
-                vol.Required(CONF_PORT): int,
+                vol.Required(CONF_HOST, default="192.168.188.14", description="Host"): str,
+                vol.Required(CONF_PORT, default=512, description="Port"): int,
+                vol.Required(CONF_SLAVE, default=1, description="Slave ID"): int,
             }
         )
+
         return self.async_show_form(
             step_id="setup_network",
             data_schema=schema,
@@ -71,6 +76,8 @@ class WavinSentioConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_setup_serial(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
+        self.data = user_input
+        self.data[CONF_TYPE] = "Serial"
         _LOGGER.error("------------------ ERROR Not implemented yet")
 
         #"""Invoked when a user initiates a flow via the user interface."""
@@ -87,15 +94,17 @@ class WavinSentioConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         #)
 
 
-    async def async_validate_wavin_sentio_connection(
+    async def async_validate_wavin_sentio_network_connection(
         self, input_data: dict[str, Any], errors: dict[str, str]
     ) -> dict[str, Any]:
         """Validate Sentio connection and create data."""
         self.data = input_data
-
+        _LOGGER.error("Got here with data {0}".format(input_data))
         try:
+            self.data[CONF_TYPE] = "Network"
             api = await self.hass.async_add_executor_job(
-                SentioModbus, self.data[CONF_HOST]
+                #SentioModbus, self.data[CONF_HOST]
+                SentioModbus, ModbusType.MODBUS_TCPIP, self.data[CONF_HOST], self.data[CONF_PORT], self.data[CONF_SLAVE], 0, logging.DEBUG
             )
 
             status = await self.hass.async_add_executor_job(api.connect)
@@ -104,76 +113,12 @@ class WavinSentioConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     "WavinSentio": self.data[CONF_HOST],
                 }
                 data = {**self.data, **info}
+                _LOGGER.error("Filled data {0}".format(data))
+                _LOGGER.error("Initialized Wavin Sentio Done")
             else:
                 errors["base"] = "connect_error"
         except NoConnectionPossible:
             errors["base"] = "connect_error"
 
         return data
-
-    #async def async_step_location(self, user_input: Optional[Dict[str, Any]] = None):
-    #    """Second step in config flow to choose the location"""
-    #    errors = {}
-    #    _LOGGER.error("---------- SB ------------- Choose location 2nd step ")
-    #    try:
-    #        self.data = user_input
-    #        api = await self.hass.async_add_executor_job(
-    #            SentioModbus, self.data[CONF_IP_ADDRESS]
-    #        )
-#
-    #        status = await self.hass.async_add_executor_job(api.connect)
-    #        _LOGGER.error("---------- SB ------------- Choose location 2nd step --- {0} ".format(status))
-    #        if status != 0:
-    #            errors["base"] = "connect_error"
-    #            _LOGGER.error("---------- SB -------------Status not null, connect error --- {0} ".format(status))
-    #            return self.async_show_form( step_id="user", data_schema=AUTH_SCHEMA, errors=errors)
-    #        else:
-    #            _LOGGER.error("---------- SB ------------- Choose location 2nd step --- Status is 0, seems complete ".format(status))
-    #    except NoConnectionPossible as err:
-    #        _LOGGER.error("---------- SB ------------- Error exception caught --- {0} ".format(err))
-    #        errors["base"] = "connect_error"
-    #        return self.async_show_form(
-    #            step_id="user", data_schema=AUTH_SCHEMA, errors=errors
-    #        )
-        
-        #outdoorTemp = await self.hass.async_add_executor_job(api.getOutdoorTemperature)
-        #_LOGGER.error("Get locations (outdoor) returned {0}".format(locations))
-    
-        #all_locations = {l["ulc"]: l["name"] for l in locations}
-        #
-        #if user_input is not None:
-            #self.data[CONF_LOCATION_ID] = user_input[CONF_LOCATION_ID]
-            #return await self.async_create_entry(title="Wavin Sentio", data=self.data)
-        #
-        #LOCATION_SCHEMA = vol.Schema(
-        #    {vol.Optional(CONF_LOCATION_ID): vol.In(all_locations)}
-        #)
-        #
-        #_LOGGER.error("---------- SB ------------- async show form complete --> ")
-        #return self.async_show_form(
-        #    step_id="location", data_schema=LOCATION_SCHEMA, errors=errors
-        #)
-        #return self.async_create_entry(
-        #    title="Wavin Sentio", 
-        #    data={
-        #        CONF_IP_ADDRESS: self.data[CONF_IP_ADDRESS]
-        #    }
-        #)
-        
-
-    #async def async_step_reauth(self, user_input=None):
-    #    _LOGGER.error("---------- SB ------------- Initialize 3 --- NO REAUTH")
-        #return await self.async_step_user()
-
-    #async def async_create_entry(self, title: str, data: dict) -> dict:
-    #    _LOGGER.error("---------- SB ------------- Initialize 4 -- DUMMY")
-        #"""Create an oauth config entry or update existing entry for reauth."""
-        # TODO: This example supports only a single config entry. Consider
-        # any special handling needed for multiple config entries.
-        #existing_entry = await self.async_set_unique_id(data[CONF_LOCATION_ID])
-        #if existing_entry:
-        #    self.hass.config_entries.async_update_entry(existing_entry, data=data)
-        #    await self.hass.config_entries.async_reload(existing_entry.entry_id)
-        #    return self.async_abort(reason="reauth_successful")
-        #return super().async_create_entry(title=title, data=data)
 
