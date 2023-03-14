@@ -49,11 +49,13 @@ class WavinSentioConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Step when setting up network configuration."""
         errors: dict[str, str] = {}
+        self.data = user_input
         if user_input is not None:
-            data = await self.async_validate_wavin_sentio_network_connection(user_input, errors)
+            self.data[CONF_TYPE] = ModbusType.MODBUS_TCPIP
+            data = await self.async_validate_wavin_sentio_connection(user_input, errors)
             if not errors:
                 _LOGGER.info("Creating entry with: {0}".format(data))
-                _LOGGER.error("Creating entry with: {0}".format(data))
+                _LOGGER.error("Creating entry with: {0}".format(data)) #TODO REMOVE
                 
                 return self.async_create_entry(
                     title=f"{data[CONF_HOST]}:{data[CONF_PORT]}", data=data
@@ -61,9 +63,9 @@ class WavinSentioConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         schema = vol.Schema(
             {
-                vol.Required(CONF_HOST, default="192.168.188.14", description="Host"): str,
-                vol.Required(CONF_PORT, default=512, description="Port"): int,
-                vol.Required(CONF_SLAVE, default=1, description="Slave ID"): int,
+                vol.Required(CONF_HOST, default="192.168.188.14", description="host"): str, #TODO REMOVE DEFAULT
+                vol.Required(CONF_PORT, default=512, description="port"): int,
+                vol.Required(CONF_SLAVE, default=1, description="slave"): int,
             }
         )
 
@@ -77,34 +79,45 @@ class WavinSentioConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         self.data = user_input
-        self.data[CONF_TYPE] = "Serial"
-        _LOGGER.error("------------------ ERROR Not implemented yet")
+        errors: dict[str, str] = {}
+        _LOGGER.error("Serial Modbus not yet supported.... ") #TODO REMOVE
+        if user_input is None:
+            return None
+        if user_input is not None:
+            self.data[CONF_TYPE] = ModbusType.MODBUS_RTU
+            data = await self.async_validate_wavin_sentio_connection(user_input, errors)
+            if not errors:
+                _LOGGER.info("Creating entry with: {0}".format(data))
+                _LOGGER.error("Creating entry with: {0}".format(data)) #TODO REMOVE
+                
+                return self.async_create_entry(
+                    title=f"{data[CONF_HOST]}:{data[CONF_PORT]}", data=data
+                )
 
-        #"""Invoked when a user initiates a flow via the user interface."""
-        #_LOGGER.error("---------- SB ------------- Initialize Config async_step_user")
-        #errors: Dict[str, str] = {}
-        #if user_input is not None:
-        #    #self.data = user_input
-        #    _LOGGER.error("---------- SB ------------- Initialize {0}".format(user_input))
-        #    # Return the form of the next step.
-        #    return await self.async_step_location(user_input)
-        #_LOGGER.error("---------- SB ------------- Wait for async show form ")
-        #return self.async_show_form(
-        #    step_id="user", data_schema=AUTH_SCHEMA, errors=errors
-        #)
+        schema_serial = vol.Schema(
+            {
+                vol.Required(CONF_HOST, default="/dev/ttyUSB0", description="port"): str, #TODO REMOVE
+                vol.Required(CONF_PORT, default=19200, description="baud"): int,
+                vol.Required(CONF_SLAVE, default=1, description="slave"): int,
+            }
+        )
+
+        return self.async_show_form(
+            step_id="setup_serial",
+            data_schema=schema_serial,
+            errors=errors,
+        )
 
 
-    async def async_validate_wavin_sentio_network_connection(
+    async def async_validate_wavin_sentio_connection(
         self, input_data: dict[str, Any], errors: dict[str, str]
     ) -> dict[str, Any]:
         """Validate Sentio connection and create data."""
         self.data = input_data
         _LOGGER.error("Got here with data {0}".format(input_data))
         try:
-            self.data[CONF_TYPE] = "Network"
             api = await self.hass.async_add_executor_job(
-                #SentioModbus, self.data[CONF_HOST]
-                SentioModbus, ModbusType.MODBUS_TCPIP, self.data[CONF_HOST], self.data[CONF_PORT], self.data[CONF_SLAVE], 0, logging.DEBUG
+                SentioModbus, self.data[CONF_TYPE], self.data[CONF_HOST], self.data[CONF_PORT], self.data[CONF_SLAVE], 0, logging.DEBUG
             )
 
             status = await self.hass.async_add_executor_job(api.connect)
@@ -112,13 +125,21 @@ class WavinSentioConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 info = {
                     "WavinSentio": self.data[CONF_HOST],
                 }
+                
                 data = {**self.data, **info}
                 _LOGGER.error("Filled data {0}".format(data))
-                _LOGGER.error("Initialized Wavin Sentio Done")
+                _LOGGER.error("Initialized Wavin Sentio Done, now disconnect")
+
+                #throw away the connection now.
+                await self.hass.async_add_executor_job(
+                        api.disconnect
+                )
+
+                return data
             else:
                 errors["base"] = "connect_error"
         except NoConnectionPossible:
             errors["base"] = "connect_error"
 
-        return data
+        return 0
 

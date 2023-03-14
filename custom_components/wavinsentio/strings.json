@@ -17,7 +17,9 @@
       },
       "setup_serial": {
         "data": {
-          "port": "Select serial device"
+          "host": "Select serial device",
+          "port": "Enter baudrate",
+          "slave": "Select Slave ID for device"
         },
         "title": "Device"
       },
@@ -32,7 +34,8 @@
       "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
       "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
       "cannot_communicate": "Failed to communicate",
-      "connect_error": "Failed to connect to device"
+      "connect_error_ip": "Failed to connect to device",
+      "connect_error_serial": "Failed to connect to device"
     },
     "abort": {
       "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
