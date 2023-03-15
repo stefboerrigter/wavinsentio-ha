@@ -11,7 +11,7 @@ from homeassistant.data_entry_flow import FlowResult
 
 import voluptuous as vol
 
-from .SentioModbus.SentioApi.SentioApi import SentioModbus, NoConnectionPossible, ModbusType
+from WavinSentioModbus.SentioApi import SentioModbus, NoConnectionPossible, ModbusType
 
 from .const import DOMAIN
 

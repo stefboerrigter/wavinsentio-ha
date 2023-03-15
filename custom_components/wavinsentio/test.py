@@ -1,7 +1,7 @@
 print("Testing")
-import SentioModbus.SentioApi
+import WavinSentioModbus
 from SentioModbus import SentioApi
-from SentioModbus.SentioApi import SentioApi
+from WavinSentioModbus import SentioApi
 
 api = SentioApi.SentioModbus("hssdfsfsd")
 print("Api = {0}".format(api))

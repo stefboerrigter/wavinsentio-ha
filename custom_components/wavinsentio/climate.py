@@ -87,9 +87,9 @@ SENSORTYPE_TO_SENSORUNIT: Final[dict[SentioSensorTypes, Any]] = {
 
 
 #from WavinSentioInterface.SentioApi import SentioApi, NoConnectionPossible
-from .SentioModbus.SentioApi.SentioApi import SentioModbus, NoConnectionPossible, ModbusType 
-from .SentioModbus.SentioApi.SentioTypes import SentioHeatingStates, SentioRoomMode, SentioRoomPreset
-from .SentioModbus.SentioApi import SentioRoom
+from WavinSentioModbus.SentioApi import SentioModbus, NoConnectionPossible, ModbusType 
+from WavinSentioModbus.SentioTypes import SentioHeatingStates, SentioRoomMode, SentioRoomPreset
+from WavinSentioModbus.SentioApi import SentioRoom
 
 from . import SentioApiHandler
 
@@ -155,7 +155,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
         
     async_add_entities(entities)
 
-    sensors = False
+    sensors = True
     if sensors:
         hass.async_create_task(
             hass.config_entries.async_forward_entry_setup(entry, "sensor")
@@ -361,11 +361,11 @@ class WavinSentioRoomSensor(CoordinatorEntity, SensorEntity):
         temp_room = self._dataservice.get_room(self._roomcode)
         if temp_room is not None:
             if self._sensorType == SentioSensorTypes.ROOM_HUMIDITY:
-                self._attr_native_value = float(temp_room.getRoomRelativeHumidity())
+                self._attr_native_value = round(float(temp_room.getRoomRelativeHumidity()), 1)
             elif self._sensorType == SentioSensorTypes.ROOM_FLOORTEMP:
-                self._attr_native_value = temp_room.GetFloorTemp()
+                self._attr_native_value = round(temp_room.GetFloorTemp(), 1)
             elif self._sensorType == SentioSensorTypes.ROOM_CALCULATED_DEWPOINT:
-                self._attr_native_value = temp_room.getRoomCalculatedDewPoint()
+                self._attr_native_value = round(temp_room.getRoomCalculatedDewPoint(), 1)
             else:
                 _LOGGER.error("Unsupported sensortype {0}".format(self._sensorType))
         self._native_value = self._attr_native_value

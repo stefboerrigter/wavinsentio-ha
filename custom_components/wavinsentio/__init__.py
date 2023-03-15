@@ -9,7 +9,7 @@ from .const import DOMAIN
 from homeassistant.const import CONF_HOST, CONF_PORT, CONF_TYPE, CONF_SLAVE, Platform
 from homeassistant.core import HomeAssistant
 
-from .SentioModbus.SentioApi.SentioApi import SentioModbus, NoConnectionPossible, ModbusType
+from WavinSentioModbus.SentioApi import SentioModbus, NoConnectionPossible, ModbusType
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,8 +56,8 @@ class SentioApiHandler:
 
     async def connect(self):
         if self._connected:
-            _LOGGER.error("Sentio connection already established")
-            return
+            _LOGGER.info("Sentio connection already established")
+            return self._connected
         else:
             status = await self._hass.async_add_executor_job(self._api.connect)
             if status == 0:
@@ -68,8 +68,8 @@ class SentioApiHandler:
 
     async def initialize(self):
         if self._initialized:
-            _LOGGER.error("Sentio data already initialized")
-            return
+            _LOGGER.info("Sentio data already initialized")
+            return self._initialized
         else:
             status = await self._hass.async_add_executor_job(self._api.initialize)
             if status == 0:
@@ -94,6 +94,18 @@ class SentioApiHandler:
     def getAvailableRooms(self):
         return self._api.availableRooms
     
+    def getItcData(self):
+        return self._api.availableItcs
+    
+    @property
+    def outdoorTemperature(self):
+        return self._api.sentioData.outdoor_temperature
+
+    @property 
+    def hcSourceState(self):
+        return self._api.sentioData.hc_source_state
+
+
     def getRoom(self, index):
         for room in self._api.availableRooms:
             if room.index == index:

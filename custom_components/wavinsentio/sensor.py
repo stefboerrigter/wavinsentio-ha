@@ -34,12 +34,12 @@ from homeassistant.components.sensor import (
 )
 
 from .const import (
-    DOMAIN,
+    DOMAIN as SENTIO_CLIMATE_DOMAIN,
     _LOGGER,
 )
 
 #from WavinSentioInterface.SentioApi import SentioApi, NoConnectionPossible
-from .SentioModbus.SentioApi.SentioApi import SentioModbus, NoConnectionPossible, ModbusType, SentioSensorObject
+from WavinSentioModbus.SentioApi import SentioModbus, NoConnectionPossible, ModbusType, SentioSensors
 
 class SentioSensorTypes(Enum):
     OUTDOOR_TEMPERATURE_SENSOR = 0
@@ -136,43 +136,43 @@ async def async_setup_entry(hass, entry, async_add_entities):
     outdoor_temp=None
 
     try:      
-        api = await hass.async_add_executor_job(
-            SentioModbus, entry.data[CONF_TYPE], entry.data[CONF_HOST], entry.data[CONF_PORT], entry.data[CONF_SLAVE], entry.data[CONF_PORT], logging.DEBUG
-        )
+        sentioApi = hass.data[SENTIO_CLIMATE_DOMAIN]
 
-        status = await hass.async_add_executor_job(api.connect)
-
-        if status != 0:
+        status = await sentioApi.connect()
+        if status != True: 
             raise ConfigEntryAuthFailed("Failed to connect")
+        status = await sentioApi.initialize()
+        if status != True:
+            raise ConfigEntryAuthFailed("Failed to initialize")
+        await sentioApi.update()
+
     except NoConnectionPossible as err:
         raise ConfigEntryAuthFailed(err) from err
 
-    itcs = await hass.async_add_executor_job(
-        api.detectITC
-    )
+    outdoor_temp = sentioApi.outdoorTemperature
 
-    outdoor_temp = await hass.async_add_executor_job(
-        api.getOutdoorTemperature
-    )
+    itcs =  sentioApi.getItcData()
 
-    sensorsFound = False
+    dataservice = WavinSentioSensorDataService(
+        hass, sentioApi
+    )
+    dataservice.async_setup()
+    
+    entities = []
+
     if itcs != None:
-        sensorsFound = True
-        _LOGGER.error("We have ITC Circuits")
+        for itc in itcs:
+            _LOGGER.error("We have ITC Circuits {0}".format(itc))
     else:
         _LOGGER.error("We have NO ITC Circuits")
     
     if outdoor_temp != None:
-        sensorsFound = True
         _LOGGER.error("We have an outdoor temperature sensor {0}".format(outdoor_temp))
+        entities.append(WavinSentioOutdoorTemperatureSensor(dataservice))
     else:
         _LOGGER.error("We have NO outdoor temperature sensor {0}".format(outdoor_temp))
 
-    if sensorsFound:
-        dataservice = WavinSentioSensorDataService(
-            hass, api
-        )
-
+    async_add_entities(entities)
     """
     outdoor_temp = await hass.async_add_executor_job(
         api.getOutdoorTemperature
@@ -196,14 +196,12 @@ async def async_setup_entry(hass, entry, async_add_entities):
     """
 
 
-
-
 class WavinSentioSensorDataService:
     """Get and update the latest data."""
 
     def __init__(self, hass, api):
         """Initialize the data object."""
-        self.api = api
+        self._api = api
 
         self._outdoorTemp = None
         self._itcData = None
@@ -227,16 +225,16 @@ class WavinSentioSensorDataService:
         return UPDATE_DELAY
 
     async def async_update_data(self):
+        _LOGGER.error("Auto update self called from Sensors")
         try:
-            self._outdoorTemp = await self.hass.async_add_executor_job(
-                self.api.getOutdoorTemperature
-            )
-            self._itcData = await self.hass.async_add_executor_job(
-                self.api.detectITC
-            )
-            self._hcsourceData = await self.hass.async_add_executor_job(
-                self.api.getHCSourceState
-            )
+            await self._api.update()
+            
+            self._outdoorTemp = self._api.outdoorTemperature
+
+            self._itcData = self._api.getItcData()
+
+            self._hcsourceData = self._api.hcSourceState
+
         except KeyError as ex:
             raise UpdateFailed("Missing overview data, skipping update") from ex
 
@@ -359,10 +357,11 @@ class WavinSentioOutdoorTemperatureSensor(CoordinatorEntity, SensorEntity):
             return {
                 "identifiers": {
                     # Serial numbers are unique identifiers within a specific domain
-                    (DOMAIN, self.unique_id)
+                    (SENTIO_CLIMATE_DOMAIN, self._dataservice.get_serialNumber())
                 },
-                "name": self.name,
+                "name": self._name,
                 "manufacturer": "Wavin",
                 "model": "Sentio",
+                "sw_version": self._dataservice.get_firmwareRevision(),
             }
         return
