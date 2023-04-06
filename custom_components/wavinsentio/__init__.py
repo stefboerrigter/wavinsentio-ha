@@ -20,7 +20,7 @@ async def async_setup_entry(
     """Set up platform from a ConfigEntry."""
     hass.data.setdefault(DOMAIN, {})
     #hass_data = dict(entry.data)
-    _LOGGER.error("__INIT__ Setting up with data --> {0}".format(entry.data))
+    _LOGGER.debug("__INIT__ Setting up with data --> {0}".format(entry.data))
     
     hass.data[DOMAIN] = SentioApiHandler(entry.data[CONF_TYPE], entry.data[CONF_HOST], entry.data[CONF_PORT], entry.data[CONF_SLAVE], logging.DEBUG, hass)
     #try:      
@@ -52,7 +52,7 @@ class SentioApiHandler:
         self._value = 0
         self._hass = hass
         self._api = SentioModbus(type, host, port, slave, port, loglevel)
-        _LOGGER.error("Sentio API class {0}".format(self._value))
+        _LOGGER.debug("Sentio API class {0}".format(self._value))
 
     async def connect(self):
         if self._connected:
@@ -63,7 +63,7 @@ class SentioApiHandler:
             if status == 0:
                 self._connected = True
             else:
-                _LOGGER.error("Sentio connection failed")
+                _LOGGER.debug("Sentio connection failed")
         return self._connected
 
     async def initialize(self):
@@ -77,9 +77,9 @@ class SentioApiHandler:
         return self._initialized
 
     async def update(self):
-        _LOGGER.error("Calling Update")
+        _LOGGER.debug("Calling Update")
         if self._connected == False or self._initialized == False:
-            _LOGGER.error("Connect and initialize first!")
+            _LOGGER.debug("Connect and initialize first!")
         else:
             await self._hass.async_add_executor_job(self._api.updateData)
     
@@ -111,10 +111,16 @@ class SentioApiHandler:
             if room.index == index:
                 return room
         return None
+    
+    def getItcCircuit(self, index):
+        for itc in self._api.availableItcs:
+            if itc.index == index:
+                return itc
+        return None
 
 
 async def async_setup(hass: core.HomeAssistant, config: dict) -> bool:
     """Set up the Wavin Sentio component."""
     # @TODO: Add setup code.
-    _LOGGER.error("__INIT__ : Calling async setup for INIT file ")
+    _LOGGER.debug("__INIT__ : Calling async setup for INIT file ")
     return True

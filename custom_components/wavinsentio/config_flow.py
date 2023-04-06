@@ -55,7 +55,7 @@ class WavinSentioConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data = await self.async_validate_wavin_sentio_connection(user_input, errors)
             if not errors:
                 _LOGGER.info("Creating entry with: {0}".format(data))
-                _LOGGER.error("Creating entry with: {0}".format(data)) #TODO REMOVE
+                _LOGGER.debug("Creating entry with: {0}".format(data)) #TODO REMOVE
                 
                 return self.async_create_entry(
                     title=f"{data[CONF_HOST]}:{data[CONF_PORT]}", data=data
@@ -80,7 +80,7 @@ class WavinSentioConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         self.data = user_input
         errors: dict[str, str] = {}
-        _LOGGER.error("Serial Modbus not yet supported.... ") #TODO REMOVE
+        _LOGGER.debug("Serial Modbus not yet supported.... ") #TODO REMOVE
         if user_input is None:
             return None
         if user_input is not None:
@@ -88,7 +88,7 @@ class WavinSentioConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data = await self.async_validate_wavin_sentio_connection(user_input, errors)
             if not errors:
                 _LOGGER.info("Creating entry with: {0}".format(data))
-                _LOGGER.error("Creating entry with: {0}".format(data)) #TODO REMOVE
+                _LOGGER.debug("Creating entry with: {0}".format(data)) #TODO REMOVE
                 
                 return self.async_create_entry(
                     title=f"{data[CONF_HOST]}:{data[CONF_PORT]}", data=data
@@ -114,7 +114,7 @@ class WavinSentioConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> dict[str, Any]:
         """Validate Sentio connection and create data."""
         self.data = input_data
-        _LOGGER.error("Got here with data {0}".format(input_data))
+        _LOGGER.debug("Got here with data {0}".format(input_data))
         try:
             api = await self.hass.async_add_executor_job(
                 SentioModbus, self.data[CONF_TYPE], self.data[CONF_HOST], self.data[CONF_PORT], self.data[CONF_SLAVE], 0, logging.DEBUG
@@ -127,8 +127,8 @@ class WavinSentioConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 }
                 
                 data = {**self.data, **info}
-                _LOGGER.error("Filled data {0}".format(data))
-                _LOGGER.error("Initialized Wavin Sentio Done, now disconnect")
+                _LOGGER.debug("Filled data {0}".format(data))
+                _LOGGER.debug("Initialized Wavin Sentio Done, now disconnect")
 
                 #throw away the connection now.
                 await self.hass.async_add_executor_job(

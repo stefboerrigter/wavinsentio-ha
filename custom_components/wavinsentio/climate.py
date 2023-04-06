@@ -56,35 +56,6 @@ from .const import(
     DEFAULT_MIN_TEMPERATURE,
 )
 
-class SentioSensorTypes(Enum):
-    ROOM_HUMIDITY = 0
-    ROOM_FLOORTEMP = 1
-    ROOM_CALCULATED_DEWPOINT = 2
-
-SENSORTYPE_TO_STRING: Final[dict[SentioSensorTypes, Any]] = {
-    SentioSensorTypes.ROOM_HUMIDITY: "Humidity",
-    SentioSensorTypes.ROOM_FLOORTEMP: "FloorTemp",
-    SentioSensorTypes.ROOM_CALCULATED_DEWPOINT: "CalculatedDewpoint",
-}
-
-SENSORTYPE_TO_DEVICECLASS: Final[dict[SentioSensorTypes, SensorDeviceClass]] = {
-    SentioSensorTypes.ROOM_HUMIDITY: SensorDeviceClass.HUMIDITY,
-    SentioSensorTypes.ROOM_FLOORTEMP: SensorDeviceClass.TEMPERATURE,
-    SentioSensorTypes.ROOM_CALCULATED_DEWPOINT: SensorDeviceClass.TEMPERATURE,
-}
-
-SENSORTYPE_TO_NATIVETYPE: Final[dict[SentioSensorTypes, Any]] = {
-    SentioSensorTypes.ROOM_HUMIDITY: float,
-    SentioSensorTypes.ROOM_FLOORTEMP: float,
-    SentioSensorTypes.ROOM_CALCULATED_DEWPOINT: float,
-}
-
-SENSORTYPE_TO_SENSORUNIT: Final[dict[SentioSensorTypes, Any]] = {
-    SentioSensorTypes.ROOM_HUMIDITY: PERCENTAGE,
-    SentioSensorTypes.ROOM_FLOORTEMP: UnitOfTemperature.CELSIUS,
-    SentioSensorTypes.ROOM_CALCULATED_DEWPOINT: UnitOfTemperature.CELSIUS,
-}
-
 
 #from WavinSentioInterface.SentioApi import SentioApi, NoConnectionPossible
 from WavinSentioModbus.SentioApi import SentioModbus, NoConnectionPossible, ModbusType 
@@ -133,7 +104,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
         raise ConfigEntryAuthFailed(err) from err
 
     rooms = sentioApi.getAvailableRooms()
-    #_LOGGER.error("Found rooms: {0}".format(rooms))
+    #_LOGGER.debug("Found rooms: {0}".format(rooms))
     dataservice = WavinSentioClimateDataService(
         hass, sentioApi, rooms
     )
@@ -145,13 +116,6 @@ async def async_setup_entry(hass, entry, async_add_entities):
     for room in rooms:
         ws = WavinSentioEntity(hass, room, dataservice)
         entities.append(ws)
-        #_LOGGER.error("Indexing room {0} {1}".format(room.name, room.getRoomRelativeHumidity()))
-        if room.getRoomRelativeHumidity() != None:
-            entities.append(WavinSentioRoomSensor(hass, room, dataservice, SentioSensorTypes.ROOM_HUMIDITY))
-        if room.GetFloorTemp() != None:
-            entities.append(WavinSentioRoomSensor(hass, room, dataservice, SentioSensorTypes.ROOM_FLOORTEMP))
-        if room.getRoomCalculatedDewPoint() != None:
-            entities.append(WavinSentioRoomSensor(hass, room, dataservice, SentioSensorTypes.ROOM_CALCULATED_DEWPOINT))
         
     async_add_entities(entities)
 
@@ -192,7 +156,7 @@ class WavinSentioClimateDataService:
         return UPDATE_DELAY
 
     async def async_update_data(self):
-        _LOGGER.error("Auto update self called")
+        _LOGGER.debug("Auto update self called")
         try:
             await self._api.update()
         except KeyError as ex:
@@ -208,12 +172,12 @@ class WavinSentioClimateDataService:
         return self._api.sentioData.serial_number
     
     async def set_new_temperature(self, roomIndex, temperature):
-        _LOGGER.error("Setting temperature: {0} -> {1}".format(roomIndex,temperature))
+        _LOGGER.debug("Setting temperature: {0} -> {1}".format(roomIndex,temperature))
         room = self._api.getRoom(roomIndex)
         await self.hass.async_add_executor_job(room.setRoomSetpoint, temperature)
 
     async def set_new_profile(self, roomIndex, profile):
-        _LOGGER.error("Setting profile: {0} -> {1}".format(roomIndex, profile))
+        _LOGGER.debug("Setting profile: {0} -> {1}".format(roomIndex, profile))
         await self.hass.async_add_executor_job(self.api.set_profile, roomIndex, profile)
 
 
@@ -225,7 +189,7 @@ class WavinSentioEntity(CoordinatorEntity, ClimateEntity):
         """Initialize the climate device."""
         self._name = room.name
         self._attr_name = room.name
-        self._attr_unique_id = f"{room.name} {room.index}"
+        self._attr_unique_id = f"{room.name}_{room.index}"
 
         self._roomcode = room.index
         self._hass = hass
@@ -261,7 +225,7 @@ class WavinSentioEntity(CoordinatorEntity, ClimateEntity):
         """Set new target temperature."""
         if (temperature := kwargs.get(ATTR_TEMPERATURE)) is None:
             return
-        _LOGGER.error("--------------------> Set Temperature {0}".format(temperature))
+        _LOGGER.debug("--------------------> Set Temperature {0}".format(temperature))
         if self._hvac_mode == HVACMode.AUTO:
             temp_room = self._dataservice.get_room(self._roomcode)
             temp_room.setRoomMode(SentioRoomMode.MANUAL)
@@ -281,16 +245,15 @@ class WavinSentioEntity(CoordinatorEntity, ClimateEntity):
                     temp_room.setRoomMode(SentioRoomMode.SCHEDULE)
                     self._hvac_mode = HVACMode.AUTO
                 else:
-                    _LOGGER.error("Failed to get room with index {0}".format(self._roomcode))
+                    _LOGGER.debug("Failed to get room with index {0}".format(self._roomcode))
             else:
-                _LOGGER.error("Hvac mode follows, not settable {0}".format(hvac_mode))
+                _LOGGER.debug("Hvac mode follows, not settable {0}".format(hvac_mode))
         self.updateSentioData()
 
     def updateSentioData(self) -> None:
         """Retrieve latest state."""
         temp_room = self._dataservice.get_room(self._roomcode)
         if temp_room is not None:
-            #_LOGGER.error("--------------------> Calling function {0} {1}".format(ins
             self._attr_current_humidity = int(temp_room.getRoomRelativeHumidity())
             self._attr_target_temperature = temp_room.getRoomSetpoint()
             self._attr_current_temperature = temp_room.getRoomActualTemperature()
@@ -304,7 +267,7 @@ class WavinSentioEntity(CoordinatorEntity, ClimateEntity):
                 self._hvac_mode = HVAC_MODE_SENTIO_TO_HASS[temp_room.getRoomHeatingState()]
             self._attr_hvac_mode = self._hvac_mode
 
-            _LOGGER.error(
+            _LOGGER.debug(
                 "Update {0}, current temp: {1} state = {2} || {3}".format(self._name, self._attr_current_temperature, temp_room.getRoomHeatingState(), self._hvac_mode )
             )
 
@@ -324,49 +287,3 @@ class WavinSentioEntity(CoordinatorEntity, ClimateEntity):
                 "sw_version": self._dataservice.get_firmwareRevision(),
             }
         return
-
-
-class WavinSentioRoomSensor(CoordinatorEntity, SensorEntity):
-    """Representation of an Outdoor Temperature Sensor."""
-
-    def __init__(self, hass, room, dataservice, sensorType:SentioSensorTypes):
-        """Initialize the sensor."""
-        super().__init__(dataservice.coordinator)
-        #self._state = None
-        self._dataservice = dataservice
-        self._roomcode = room.index
-        self._hass = hass
-        self._sensorType = sensorType
-        self._name = "{0} {1}".format(room.name, SENSORTYPE_TO_STRING[self._sensorType])
-        self._attr_name = self._name
-        self._attr_unique_id = "{0}_{1}".format(self._roomcode, self._name.replace(" ", "_"))
-        self._native_value = float(0.0)
-        self._attr_native_value = float(0.0)
-        self._attr_native_unit_of_measurement = SENSORTYPE_TO_SENSORUNIT[self._sensorType]
-        self._attr_precision = 0.1
-        self._attr_temperature_unit = TEMP_CELSIUS
-        self._attr_device_class = SENSORTYPE_TO_DEVICECLASS[self._sensorType]
-        self._attr_state_class = SensorStateClass.MEASUREMENT
-        #self.update()
-
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        """Update attributes when the coordinator updates."""
-        _LOGGER.error("Calling coordinator update from roomsensor class ")
-        self.update()
-        super()._handle_coordinator_update()
-
-    def update(self) -> None:
-        """Retrieve latest state."""
-        temp_room = self._dataservice.get_room(self._roomcode)
-        if temp_room is not None:
-            if self._sensorType == SentioSensorTypes.ROOM_HUMIDITY:
-                self._attr_native_value = round(float(temp_room.getRoomRelativeHumidity()), 1)
-            elif self._sensorType == SentioSensorTypes.ROOM_FLOORTEMP:
-                self._attr_native_value = round(temp_room.GetFloorTemp(), 1)
-            elif self._sensorType == SentioSensorTypes.ROOM_CALCULATED_DEWPOINT:
-                self._attr_native_value = round(temp_room.getRoomCalculatedDewPoint(), 1)
-            else:
-                _LOGGER.error("Unsupported sensortype {0}".format(self._sensorType))
-        self._native_value = self._attr_native_value
-        _LOGGER.error("Updating {0} {1}".format(self._attr_unique_id, self._attr_native_value))
