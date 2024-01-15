@@ -62,6 +62,7 @@ class SentioSensorTypes(Enum):
     ITC_INLETDESIRED = 23
     ITC_RETURNTEMP = 24
     ITC_SUPPLIERTEMP = 25
+    MAIN_HC_SOURCE = 30
 
 SENSORTYPE_TO_STRING: Final[dict[SentioSensorTypes, Any]] = {
     SentioSensorTypes.ROOM_HUMIDITY: "Humidity",
@@ -418,28 +419,33 @@ class WavinHCSourceTemperatureSensor(SensorEntity):
 
         self._native_value = None
         self._attr_native_value = None
-        
+
         #self._attr_state_class = SensorStateClass.MEASUREMENT
         self.update()
     
-    def update(self) -> None:
-        #Retrieve latest state.
-        
-        state = self._dataservice.get_HCSourceData
-        if state == SentioHeatingStates.IDLE:
-            self._attr_native_value = HVACMode.OFF
-        elif state == SentioHeatingStates.HEATING:
-            self._attr_native_value = HVACMode.HEAT
-        elif state == SentioHeatingStates.COOLING:
-            self._attr_native_value = HVACMode.COOL
-        elif state == SentioHeatingStates.BLOCKED_HEATING:
+    def update(self) -> None:       
+        state = self._dataservice.get_HCSourceData()
+        if state != None:
+            if state == SentioHeatingStates.IDLE:
+                self._attr_native_value = HVACMode.OFF
+            elif state == SentioHeatingStates.HEATING:
+                self._attr_native_value = HVACMode.HEAT
+            elif state == SentioHeatingStates.COOLING:
+                self._attr_native_value = HVACMode.COOL
+            elif state == SentioHeatingStates.BLOCKED_HEATING:
                 self._attr_native_value = "Blocked Heat"
-        elif state == SentioHeatingStates.BLOCKED_COOLING:
-            self._attr_native_value = "Blocked Cooling" 
-        self._native_value = self._attr_native_value
-        _LOGGER.debug("Updating {0} {1}".format(self._attr_unique_id, self._attr_native_value))
+            elif state == SentioHeatingStates.BLOCKED_COOLING:
+                self._attr_native_value = "Blocked Cooling" 
+            else:
+                _LOGGER.error("MAIN HC Source state unknown? {0} ".format(state))
+            self._native_value = self._attr_native_value
+            _LOGGER.debug("MAIN HC Source Updating {0} {1}".format(self._attr_unique_id, self._attr_native_value))
     
-
+    @property
+    def native_value(self) -> StateType:
+        """Return the state."""
+        return self._attr_native_value
+    
 
 class WavinSentioRoomSensor(SensorEntity):
     """Representation of an Outdoor Temperature Sensor."""
