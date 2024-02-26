@@ -254,7 +254,9 @@ class WavinSentioEntity(CoordinatorEntity, ClimateEntity):
         """Retrieve latest state."""
         temp_room = self._dataservice.get_room(self._roomcode)
         if temp_room is not None:
-            self._attr_current_humidity = int(temp_room.getRoomRelativeHumidity())
+            if temp_room.getRoomRelativeHumidity() != None:
+                self._attr_current_humidity = int(temp_room.getRoomRelativeHumidity())
+            
             self._attr_target_temperature = temp_room.getRoomSetpoint()
             self._attr_current_temperature = temp_room.getRoomActualTemperature()
             self._current_temperature = self._attr_current_temperature
