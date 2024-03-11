@@ -13,8 +13,7 @@ from homeassistant.const import (
     CONF_PORT, 
     CONF_TYPE, 
     CONF_SLAVE, 
-    PERCENTAGE, 
-    TEMP_CELSIUS,
+    PERCENTAGE,
     UnitOfTemperature,
     STATE_ON,
     STATE_OFF,
@@ -304,7 +303,7 @@ class WavinItcSensor(SensorEntity):
         self._attr_native_value = None
         if self._sensorType != SentioSensorTypes.ITC_STATE:           
             self._attr_precision = 0.1
-            self._attr_temperature_unit = TEMP_CELSIUS
+            self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         
         #self._attr_state_class = SensorStateClass.MEASUREMENT
         self.update()
@@ -379,7 +378,7 @@ class WavinSentioOutdoorTemperatureSensor(CoordinatorEntity, SensorEntity):
     @property
     def unit_of_measurement(self) -> str:
         """Return the unit of measurement."""
-        return TEMP_CELSIUS
+        return UnitOfTemperature.CELSIUS
 
     @property
     def device_class(self):
@@ -470,7 +469,7 @@ class WavinSentioRoomSensor(SensorEntity):
         else:
             self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
             self._attr_precision = 0.1
-            self._attr_temperature_unit = TEMP_CELSIUS
+            self._attr_temperature_unit = UnitOfTemperature.CELSIUS
             self._attr_device_class = SensorDeviceClass.TEMPERATURE
         
         self._attr_state_class = SensorStateClass.MEASUREMENT

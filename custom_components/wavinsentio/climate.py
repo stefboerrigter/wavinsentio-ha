@@ -28,7 +28,7 @@ from homeassistant.const import (
 
 from homeassistant.const import (
     ATTR_TEMPERATURE,
-    TEMP_CELSIUS,
+    UnitOfTemperature,
 )
 
 from homeassistant.components.climate.const import (
@@ -203,7 +203,7 @@ class WavinSentioEntity(CoordinatorEntity, ClimateEntity):
         self._attr_max_temp = DEFAULT_MAX_TEMPERATURE
         self._attr_preset_modes = ["Manual", "Auto"]
         self._attr_precision = 0.1
-        self._attr_temperature_unit = TEMP_CELSIUS
+        self._attr_temperature_unit = UnitOfTemperature.CELSIUS
 
         self._current_temperature = None
         self._current_humidity = None
