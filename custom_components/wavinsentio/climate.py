@@ -33,10 +33,6 @@ from homeassistant.const import (
 
 from homeassistant.components.climate.const import (
     ATTR_HUMIDITY,
-    CURRENT_HVAC_HEAT,
-    CURRENT_HVAC_IDLE,
-    SUPPORT_PRESET_MODE,
-    SUPPORT_TARGET_TEMPERATURE,
 )
 
 from homeassistant.exceptions import ConfigEntryAuthFailed
