@@ -28,7 +28,7 @@ from homeassistant.const import (
 
 from homeassistant.const import (
     ATTR_TEMPERATURE,
-    TEMP_CELSIUS,
+    UnitOfTemperature,
 )
 
 from homeassistant.components.climate.const import (
@@ -195,14 +195,15 @@ class WavinSentioEntity(CoordinatorEntity, ClimateEntity):
         self._hass = hass
         self._dataservice = dataservice
 
-        self._attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE     
+        self._enable_turn_on_off_backwards_compatibility = False
+        self._attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.TURN_OFF | ClimateEntityFeature.TURN_ON 
         self._attr_hvac_modes = [HVACMode.AUTO, HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL]
         self._attr_hvac_mode = HVACMode.AUTO
         self._attr_min_temp = DEFAULT_MIN_TEMPERATURE
         self._attr_max_temp = DEFAULT_MAX_TEMPERATURE
         self._attr_preset_modes = ["Manual", "Auto"]
         self._attr_precision = 0.1
-        self._attr_temperature_unit = TEMP_CELSIUS
+        self._attr_temperature_unit = UnitOfTemperature.CELSIUS
 
         self._current_temperature = None
         self._current_humidity = None
@@ -231,6 +232,12 @@ class WavinSentioEntity(CoordinatorEntity, ClimateEntity):
             temp_room.setRoomMode(SentioRoomMode.MANUAL)
         await self._dataservice.set_new_temperature(self._roomcode, temperature)
         self.updateSentioData()
+
+    async def async_turn_off(self) -> None:
+        await self.async_set_hvac_mode(HVACMode.OFF)
+
+    async def async_turn_on(self) -> None:
+        await self.async_set_hvac_mode(HVACMode.HEATING)
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new target hvac mode."""
