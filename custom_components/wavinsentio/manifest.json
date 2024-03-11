@@ -1,9 +1,9 @@
 {
-  "codeowners": ["@djerik"],
+  "codeowners": ["@stefboerrigter"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/djerik/wavinsentio-ha",
-  "issue_tracker": "https://github.com/djerik/wavinsentio-ha/issues",
+  "documentation": "https://github.com/stefboerrigter/wavinsentio-ha",
+  "issue_tracker": "https://github.com/stefboerrigter/wavinsentio-ha/issues",
   "domain": "wavinsentio",
   "name": "Wavin Sentio",
   "requirements": ["pymodbus==3.1.0", "WavinSentioModbus == 0.5.0"],
