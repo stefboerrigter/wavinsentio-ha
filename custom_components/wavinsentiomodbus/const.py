@@ -1,7 +1,7 @@
 import logging
 _LOGGER = logging.getLogger(__name__)
 
-DOMAIN = "wavinsentio"
+DOMAIN = "wavinsentiomodbus"
 
 CONF_LOCATION_ID = "ULC"
 
