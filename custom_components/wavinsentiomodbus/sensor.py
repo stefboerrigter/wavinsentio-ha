@@ -54,6 +54,7 @@ class SentioSensorTypes(Enum):
     ROOM_HUMIDITY = 0
     ROOM_FLOORTEMP = 1
     ROOM_CALCULATED_DEWPOINT = 2
+    ROOM_CO2_LEVEL = 3
     OUTDOOR_TEMPERATURE_SENSOR = 10
     ITC_STATE = 20
     ITC_PUMPSTATE = 21
@@ -67,6 +68,7 @@ SENSORTYPE_TO_STRING: Final[dict[SentioSensorTypes, Any]] = {
     SentioSensorTypes.ROOM_HUMIDITY: "Humidity",
     SentioSensorTypes.ROOM_FLOORTEMP: "FloorTemp",
     SentioSensorTypes.ROOM_CALCULATED_DEWPOINT: "CalculatedDewpoint",
+    SentioSensorTypes.ROOM_CO2_LEVEL: "CO2 Level",
     SentioSensorTypes.OUTDOOR_TEMPERATURE_SENSOR: "Temperature",
     SentioSensorTypes.ITC_STATE: "ITC State",
     SentioSensorTypes.ITC_PUMPSTATE: "ITC Pump State",
@@ -90,6 +92,7 @@ SENSORTYPE_TO_NATIVETYPE: Final[dict[SentioSensorTypes, Any]] = {
     SentioSensorTypes.ROOM_HUMIDITY: float,
     SentioSensorTypes.ROOM_FLOORTEMP: float,
     SentioSensorTypes.ROOM_CALCULATED_DEWPOINT: float,
+    SentioSensorTypes.ROOM_CO2_LEVEL: int,
     SentioSensorTypes.OUTDOOR_TEMPERATURE_SENSOR: float,
     SentioSensorTypes.ITC_STATE: int,
     SentioSensorTypes.ITC_PUMPSTATE: int,
@@ -103,6 +106,10 @@ SENSORTYPE_TO_SENSORUNIT: Final[dict[SentioSensorTypes, Any]] = {
     SentioSensorTypes.OUTDOOR_TEMPERATURE_SENSOR: UnitOfTemperature.CELSIUS,
     SentioSensorTypes.ITC_STATE: None,
     SentioSensorTypes.ITC_PUMPSTATE: None,
+    SentioSensorTypes.ROOM_CO2_LEVEL: "ppm",
+    SentioSensorTypes.ROOM_HUMIDITY: PERCENTAGE,
+    SentioSensorTypes.ROOM_FLOORTEMP: UnitOfTemperature.CELSIUS,
+    SentioSensorTypes.ROOM_CALCULATED_DEWPOINT: UnitOfTemperature.CELSIUS,
     SentioSensorTypes.ITC_INLETTEMP: UnitOfTemperature.CELSIUS,
     SentioSensorTypes.ITC_INLETDESIRED: UnitOfTemperature.CELSIUS,
     SentioSensorTypes.ITC_RETURNTEMP: UnitOfTemperature.CELSIUS,
@@ -211,6 +218,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
                 entities.append(WavinSentioRoomSensor(room, dataservice, SentioSensorTypes.ROOM_FLOORTEMP))
             if room.getRoomCalculatedDewPoint() != None:
                 entities.append(WavinSentioRoomSensor(room, dataservice, SentioSensorTypes.ROOM_CALCULATED_DEWPOINT))
+            if room.getRoomCO2Level() != None:
+                entities.append(WavinSentioRoomSensor(room, dataservice, SentioSensorTypes.ROOM_CO2_LEVEL))
 
     if hcSource != None:
         entities.append(WavinHCSourceTemperatureSensor(dataservice))
@@ -466,6 +475,10 @@ class WavinSentioRoomSensor(SensorEntity):
             self._attr_native_unit_of_measurement = PERCENTAGE
             self._attr_precision = 0
             self._attr_device_class = SensorDeviceClass.HUMIDITY
+        elif self._sensorType == SentioSensorTypes.ROOM_CO2_LEVEL:
+            self._attr_native_unit_of_measurement = "ppm"
+            self._attr_precision = 0
+            self._attr_device_class = None
         else:
             self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
             self._attr_precision = 0.1
@@ -492,6 +505,8 @@ class WavinSentioRoomSensor(SensorEntity):
                 self._attr_native_value = round(temp_room.GetFloorTemp(), 1)
             elif self._sensorType == SentioSensorTypes.ROOM_CALCULATED_DEWPOINT:
                 self._attr_native_value = round(temp_room.getRoomCalculatedDewPoint(), 1)
+            elif self._sensorType == SentioSensorTypes.ROOM_CO2_LEVEL:
+                self._attr_native_value = int(temp_room.getRoomCO2Level())
             else:
                 _LOGGER.debug("Unsupported sensortype {0}".format(self._sensorType))
         self._native_value = self._attr_native_value
