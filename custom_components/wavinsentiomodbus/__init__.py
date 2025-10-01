@@ -97,6 +97,9 @@ class SentioApiHandler:
     def getItcData(self):
         return self._api.availableItcs
     
+    def getHccData(self):
+        return self._api.availableHccs
+    
     @property
     def outdoorTemperature(self):
         return self._api.sentioData.outdoor_temperature
@@ -105,6 +108,8 @@ class SentioApiHandler:
     def hcSourceState(self):
         return self._api.sentioData.hc_source_state
 
+    def getTemperatureSensors(self, index):
+        return self._api.sentioData.temperature_sensors(index)
 
     def getRoom(self, index):
         for room in self._api.availableRooms:
@@ -117,7 +122,12 @@ class SentioApiHandler:
             if itc.index == index:
                 return itc
         return None
-
+    
+    def getHccCircuit(self, index):
+        for hcc in self._api.availableHccs:
+            if hcc.index == index:
+                return hcc
+        return None
 
 async def async_setup(hass: core.HomeAssistant, config: dict) -> bool:
     """Set up the Wavin Sentio component."""
