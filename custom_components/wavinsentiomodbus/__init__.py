@@ -100,6 +100,8 @@ class SentioApiHandler:
     def getHccData(self):
         return self._api.availableHccs
     
+    def getBoilerTanks(self):
+        return self._api.boilerTanks
     @property
     def outdoorTemperature(self):
         return self._api.sentioData.outdoor_temperature
@@ -129,6 +131,12 @@ class SentioApiHandler:
                 return hcc
         return None
 
+    def getBoilerTankByIndex(self, index):
+        for tank in self._api.boilerTanks:
+            if tank.index == index:
+                return tank
+        return None
+    
 async def async_setup(hass: core.HomeAssistant, config: dict) -> bool:
     """Set up the Wavin Sentio component."""
     # @TODO: Add setup code.

@@ -1,7 +1,7 @@
 from datetime import timedelta
 import logging
 from typing import Any, Final
-from enum import Enum
+from enum import Enum, IntEnum
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -78,6 +78,8 @@ class SentioSensorTypes(Enum):
     HCC_INLETDESIRED = 43
     HCC_RETURNTEMP = 44
     HCC_SUPPLIERTEMP = 45
+    BOILERTANK_SETPOINT = 50
+    BOILERTANK_ACTUALTEMP = 51
     
 
 SENSORTYPE_TO_STRING: Final[dict[SentioSensorTypes, Any]] = {
@@ -98,6 +100,8 @@ SENSORTYPE_TO_STRING: Final[dict[SentioSensorTypes, Any]] = {
     SentioSensorTypes.HCC_INLETDESIRED: "HCC Desired InletTemperature",
     SentioSensorTypes.HCC_RETURNTEMP: "HCC Return Temperature",
     SentioSensorTypes.HCC_SUPPLIERTEMP: "HCC Supplier Temperature",
+    SentioSensorTypes.BOILERTANK_SETPOINT: "Boiler Tank Setpoint",
+    SentioSensorTypes.BOILERTANK_ACTUALTEMP: "Boiler Tank Actual Temperature",
     
 }
 
@@ -115,6 +119,8 @@ SENSORTYPE_TO_DEVICECLASS: Final[dict[SentioSensorTypes, Any]] = {
     SentioSensorTypes.HCC_INLETDESIRED:SensorDeviceClass.TEMPERATURE,
     SentioSensorTypes.HCC_RETURNTEMP: SensorDeviceClass.TEMPERATURE,
     SentioSensorTypes.HCC_SUPPLIERTEMP: SensorDeviceClass.TEMPERATURE,
+    SentioSensorTypes.BOILERTANK_ACTUALTEMP: SensorDeviceClass.TEMPERATURE,
+    SentioSensorTypes.BOILERTANK_SETPOINT: SensorDeviceClass.TEMPERATURE,
 }
 
 SENSORTYPE_TO_NATIVETYPE: Final[dict[SentioSensorTypes, Any]] = {
@@ -135,6 +141,8 @@ SENSORTYPE_TO_NATIVETYPE: Final[dict[SentioSensorTypes, Any]] = {
     SentioSensorTypes.HCC_INLETDESIRED: float,
     SentioSensorTypes.HCC_RETURNTEMP: float,
     SentioSensorTypes.HCC_SUPPLIERTEMP: float,
+    SentioSensorTypes.BOILERTANK_SETPOINT: float,
+    SentioSensorTypes.BOILERTANK_ACTUALTEMP: float,
 }
 
 SENSORTYPE_TO_SENSORUNIT: Final[dict[SentioSensorTypes, Any]] = {
@@ -155,6 +163,8 @@ SENSORTYPE_TO_SENSORUNIT: Final[dict[SentioSensorTypes, Any]] = {
     SentioSensorTypes.HCC_INLETDESIRED: UnitOfTemperature.CELSIUS,
     SentioSensorTypes.HCC_RETURNTEMP: UnitOfTemperature.CELSIUS,
     SentioSensorTypes.HCC_SUPPLIERTEMP: UnitOfTemperature.CELSIUS,
+    SentioSensorTypes.BOILERTANK_SETPOINT: UnitOfTemperature.CELSIUS,
+    SentioSensorTypes.BOILERTANK_ACTUALTEMP: UnitOfTemperature.CELSIUS,
 }
 
 
@@ -227,6 +237,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
     itcs =  sentioApi.getItcData()
     hccs = sentioApi.getHccData()
+    boilerTanks = sentioApi.getBoilerTanks()
 
     hcSource = sentioApi.hcSourceState
 
@@ -250,7 +261,13 @@ async def async_setup_entry(hass, entry, async_add_entities):
             entities.append(WavinItcSensor(hass, itc, dataservice, SentioSensorTypes.ITC_SUPPLIERTEMP))
     else:
         _LOGGER.debug("We have NO ITC Circuits")
-        
+    
+    if boilerTanks != None:
+        for boilerTank in boilerTanks:
+            _LOGGER.debug("We have Boiler Tank {0}".format(boilerTank))
+            entities.append(WavinBoilerTankSensor(hass, boilerTank, dataservice, SentioSensorTypes.BOILERTANK_SETPOINT))
+            entities.append(WavinBoilerTankSensor(hass, boilerTank, dataservice, SentioSensorTypes.BOILERTANK_ACTUALTEMP)) 
+    
     if hccs != None:
         for hcc in hccs:
             _LOGGER.debug("We have HCC Circuits {0}".format(hcc))
@@ -330,6 +347,7 @@ class WavinSentioSensorDataService:
 
             self._itcData = self._api.getItcData()
             self._hccData = self._api.getHccData()
+            self._boilerTanks = self._api.getBoilerTanks()
 
             self._hcsourceData = self._api.hcSourceState
             
@@ -354,8 +372,14 @@ class WavinSentioSensorDataService:
     def get_itcCircuit(self, itcIndex):
         return self._api.getItcCircuit(itcIndex)
     
+    def get_boilerTank(self, index):
+        return self._api.getBoilerTankByIndex(index)
+    
     def get_hccData(self):
         return self._hccData
+    
+    def get_boilerTankData(self):
+        return self._boilerTanks
     
     def get_hccCircuit(self, hccIndex):
         return self._api.getHccCircuit(hccIndex)
@@ -477,6 +501,44 @@ class WavinHccSensor(SensorEntity):
                 self._attr_native_value = local_hcc.getReturnTemp
             elif self._sensorType == SentioSensorTypes.HCC_SUPPLIERTEMP:
                 self._attr_native_value = local_hcc.getSupplierTemp
+            else:
+                _LOGGER.debug("Unsupported sensortype {0}".format(self._sensorType))
+        self._native_value = self._attr_native_value
+        _LOGGER.debug("Updating {0} {1}".format(self._attr_unique_id, self._attr_native_value))
+
+class WavinBoilerTankSensor(SensorEntity):
+    
+    def __init__(self, hass, tank, dataservice, sensorType:SentioSensorTypes):
+         #Initialize the sensor.
+        self._state = None
+        self._dataservice = dataservice
+        self._boilerIndex = tank.index
+        self._hass = hass
+        self._sensorType = sensorType
+        self._name = "{0} {1}".format(tank.name, SENSORTYPE_TO_STRING[self._sensorType])
+        self._attr_name = self._name
+        self._attr_unique_id = "{0}_{1}".format(self._boilerIndex, self._name.replace(" ", "_"))
+        self._attr_native_unit_of_measurement = SENSORTYPE_TO_SENSORUNIT[self._sensorType]
+        self._attr_device_class = SENSORTYPE_TO_DEVICECLASS[self._sensorType]
+
+        self._native_value = None
+        self._attr_native_value = None
+        if self._sensorType != SentioSensorTypes.ITC_STATE:           
+            self._attr_precision = 0.1
+            self._attr_temperature_unit = UnitOfTemperature.CELSIUS
+        
+        #self._attr_state_class = SensorStateClass.MEASUREMENT
+        self.update()
+
+
+    def update(self) -> None:
+        #Retrieve latest state.
+        tank = self._dataservice.get_boilerTank(self._boilerIndex)
+        if tank is not None:
+            if self._sensorType == SentioSensorTypes.BOILERTANK_SETPOINT:
+                self._attr_native_value = tank.getTemperatureSetpoint
+            elif self._sensorType == SentioSensorTypes.BOILERTANK_ACTUALTEMP:
+                self._attr_native_value = tank.getCurrentTemp
             else:
                 _LOGGER.debug("Unsupported sensortype {0}".format(self._sensorType))
         self._native_value = self._attr_native_value
