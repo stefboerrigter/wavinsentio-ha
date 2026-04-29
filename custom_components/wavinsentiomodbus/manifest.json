@@ -6,7 +6,7 @@
   "issue_tracker": "https://github.com/stefboerrigter/wavinsentio-ha/issues",
   "domain": "wavinsentiomodbus",
   "name": "Wavin Sentio Modbus",
-  "requirements": ["WavinSentioModbus == 0.13.0"],
-  "version": "0.3.0",
+  "requirements": ["WavinSentioModbus == 0.14.0"],
+  "version": "0.5.0",
   "iot_class": "local_polling"
 }
