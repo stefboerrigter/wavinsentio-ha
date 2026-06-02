@@ -239,7 +239,10 @@ class WavinSentioEntity(CoordinatorEntity, ClimateEntity):
         _LOGGER.debug("--------------------> Set Temperature {0}".format(temperature))
         if self._hvac_mode == HVACMode.AUTO:
             temp_room = self._dataservice.get_room(self._roomcode)
-            temp_room.setRoomMode(SentioRoomMode.MANUAL)
+            if temp_room is not None:
+                await self.hass.async_add_executor_job(
+                    temp_room.setRoomMode, SentioRoomMode.MANUAL
+                )
         await self._dataservice.set_new_temperature(self._roomcode, temperature)
         self.updateSentioData()
 
@@ -257,9 +260,11 @@ class WavinSentioEntity(CoordinatorEntity, ClimateEntity):
         else:
             self._on = True
             if hvac_mode == HVACMode.AUTO:
-                temp_room = await self.hass.async_add_executor_job(self._dataservice.get_room, self._roomcode)
+                temp_room = self._dataservice.get_room(self._roomcode)
                 if temp_room is not None:
-                    temp_room.setRoomMode(SentioRoomMode.SCHEDULE)
+                    await self.hass.async_add_executor_job(
+                        temp_room.setRoomMode, SentioRoomMode.SCHEDULE
+                    )
                     self._hvac_mode = HVACMode.AUTO
                 else:
                     _LOGGER.debug("Failed to get room with index {0}".format(self._roomcode))
