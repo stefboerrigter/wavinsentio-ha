@@ -6,8 +6,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from homeassistant.core import callback
-from homeassistant.const import CONF_HOST, CONF_PORT, CONF_TYPE, CONF_SLAVE
-
 from homeassistant.const import (
     CONF_HOST, 
     CONF_PORT, 
@@ -523,9 +521,8 @@ class WavinBoilerTankSensor(SensorEntity):
 
         self._native_value = None
         self._attr_native_value = None
-        if self._sensorType != SentioSensorTypes.ITC_STATE:           
-            self._attr_precision = 0.1
-            self._attr_temperature_unit = UnitOfTemperature.CELSIUS
+        self._attr_precision = 0.1
+        self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         
         #self._attr_state_class = SensorStateClass.MEASUREMENT
         self.update()

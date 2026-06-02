@@ -23,10 +23,6 @@ from homeassistant.const import (
     CONF_TYPE, 
     CONF_SLAVE, 
     PERCENTAGE, 
-    UnitOfTemperature
-)
-
-from homeassistant.const import (
     ATTR_TEMPERATURE,
     UnitOfTemperature,
 )
@@ -174,7 +170,7 @@ class WavinSentioClimateDataService:
 
     async def set_new_profile(self, roomIndex, profile):
         _LOGGER.debug("Setting profile: {0} -> {1}".format(roomIndex, profile))
-        await self.hass.async_add_executor_job(self.api.set_profile, roomIndex, profile)
+        await self.hass.async_add_executor_job(self._api.set_profile, roomIndex, profile)
 
 
 class WavinSentioEntity(CoordinatorEntity, ClimateEntity):
@@ -233,7 +229,7 @@ class WavinSentioEntity(CoordinatorEntity, ClimateEntity):
         await self.async_set_hvac_mode(HVACMode.OFF)
 
     async def async_turn_on(self) -> None:
-        await self.async_set_hvac_mode(HVACMode.HEATING)
+        await self.async_set_hvac_mode(HVACMode.HEAT)
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new target hvac mode."""

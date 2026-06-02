@@ -81,8 +81,6 @@ class WavinSentioConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.data = user_input
         errors: dict[str, str] = {}
         _LOGGER.debug("Serial Modbus not yet supported.... ") #TODO REMOVE
-        if user_input is None:
-            return None
         if user_input is not None:
             self.data[CONF_TYPE] = ModbusType.MODBUS_RTU
             data = await self.async_validate_wavin_sentio_connection(user_input, errors)
