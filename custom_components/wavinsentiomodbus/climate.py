@@ -8,8 +8,11 @@ from homeassistant.core import callback
 from homeassistant.components.climate import (
     ClimateEntity,
     ClimateEntityFeature,
-    HVACMode
+    HVACAction,
+    HVACMode,
 )
+
+from homeassistant.components import persistent_notification
 
 from homeassistant.components.sensor import (
     SensorEntity, 
@@ -64,11 +67,25 @@ HVAC_MODE_HASS_TO_SENTIO: Final[dict[HVACMode, SentioHeatingStates]] = {
 }
 
 HVAC_MODE_SENTIO_TO_HASS: Final[dict[SentioHeatingStates, HVACMode]] = {
-    #SentioHeatingStates.HEATING: HVACMode.AUTO,
-    SentioHeatingStates.COOLING: HVACMode.COOL,
-    SentioHeatingStates.HEATING: HVACMode.HEAT,
-    SentioHeatingStates.IDLE: HVACMode.OFF,
+    SentioHeatingStates.COOLING:         HVACMode.COOL,
+    SentioHeatingStates.HEATING:         HVACMode.HEAT,
+    SentioHeatingStates.IDLE:            HVACMode.OFF,
+    SentioHeatingStates.BLOCKED_COOLING: HVACMode.COOL,
+    SentioHeatingStates.BLOCKED_HEATING: HVACMode.HEAT,
 }
+
+HEATING_STATE_TO_ACTION: Final[dict[SentioHeatingStates, HVACAction]] = {
+    SentioHeatingStates.HEATING:         HVACAction.HEATING,
+    SentioHeatingStates.COOLING:         HVACAction.COOLING,
+    SentioHeatingStates.IDLE:            HVACAction.IDLE,
+    SentioHeatingStates.BLOCKED_HEATING: HVACAction.IDLE,
+    SentioHeatingStates.BLOCKED_COOLING: HVACAction.IDLE,
+}
+
+BLOCKED_STATES: Final = (
+    SentioHeatingStates.BLOCKED_HEATING,
+    SentioHeatingStates.BLOCKED_COOLING,
+)
 
 
 PRESET_MODES = {
@@ -206,6 +223,7 @@ class WavinSentioEntity(CoordinatorEntity, ClimateEntity):
         self._current_operation_mode = SentioRoomMode.MANUAL
         
         self._operation = None
+        self._was_blocked = False
         self.updateSentioData()
 
     @callback
@@ -261,16 +279,50 @@ class WavinSentioEntity(CoordinatorEntity, ClimateEntity):
             self._current_temperature = self._attr_current_temperature
             self._current_humidity = self._attr_current_humidity
 
+            heating_state = temp_room.getRoomHeatingState()
             roomMode = temp_room.getRoomMode()
             if roomMode == SentioRoomMode.SCHEDULE:
                 self._hvac_mode = HVACMode.AUTO
-            else:    
-                self._hvac_mode = HVAC_MODE_SENTIO_TO_HASS[temp_room.getRoomHeatingState()]
+            else:
+                self._hvac_mode = HVAC_MODE_SENTIO_TO_HASS.get(
+                    heating_state, HVACMode.OFF
+                )
             self._attr_hvac_mode = self._hvac_mode
+            self._attr_hvac_action = HEATING_STATE_TO_ACTION.get(
+                heating_state, HVACAction.IDLE
+            )
+
+            self._handle_blocking_notification(temp_room, heating_state)
 
             _LOGGER.debug(
-                "Update {0}, current temp: {1} state = {2} || {3}".format(self._name, self._attr_current_temperature, temp_room.getRoomHeatingState(), self._hvac_mode )
+                "Update {0}, current temp: {1} state = {2} || {3}".format(self._name, self._attr_current_temperature, heating_state, self._hvac_mode )
             )
+
+    def _handle_blocking_notification(self, temp_room, heating_state) -> None:
+        """Fire a one-shot HA notification when the room transitions into a blocked state."""
+        notification_id = f"wavinsentio_blocked_{self._roomcode}"
+        is_blocked = heating_state in BLOCKED_STATES
+
+        if is_blocked and not self._was_blocked:
+            reason = getattr(temp_room, "roomBlockingMode", None)
+            reason_str = reason.name if reason is not None else "UNKNOWN"
+            _LOGGER.info(
+                "Room %s entered blocked state %s (reason: %s)",
+                self._name, heating_state.name, reason_str,
+            )
+            persistent_notification.async_create(
+                self._hass,
+                (
+                    f"Room **{self._name}** is currently blocked "
+                    f"({heating_state.name}).\n\nReason: **{reason_str}**."
+                ),
+                title="Wavin Sentio: room blocked",
+                notification_id=notification_id,
+            )
+        elif not is_blocked and self._was_blocked:
+            persistent_notification.async_dismiss(self._hass, notification_id)
+
+        self._was_blocked = is_blocked
 
 
     @property
