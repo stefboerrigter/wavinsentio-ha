@@ -211,25 +211,9 @@ UNIT_SENSORS: tuple[SentioSensorEntityDescription, ...] = (
 UPDATE_DELAY = timedelta(seconds=30)
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    _LOGGER.debug("Printing HASS Object Start")
-    _LOGGER.debug(hass)
-    _LOGGER.debug("Printing HASS Object Done")
-    
     outdoor_temp=None
 
-    try:      
-        sentioApi = hass.data[SENTIO_CLIMATE_DOMAIN]
-
-        status = await sentioApi.connect()
-        if status != True: 
-            raise ConfigEntryAuthFailed("Failed to connect")
-        status = await sentioApi.initialize()
-        if status != True:
-            raise ConfigEntryAuthFailed("Failed to initialize")
-        await sentioApi.update()
-
-    except NoConnectionPossible as err:
-        raise ConfigEntryAuthFailed(err) from err
+    sentioApi = hass.data[SENTIO_CLIMATE_DOMAIN][entry.entry_id]
 
     outdoor_temp = sentioApi.outdoorTemperature
 
@@ -313,59 +297,19 @@ class WavinSentioSensorDataService:
     def __init__(self, hass, api):
         """Initialize the data object."""
         self._api = api
-
-        self._outdoorTemp = None
-        self._itcData = None
-        self._hcsourceData = None
         self.hass = hass
         self.coordinator = None
-        self._temperatureSensors = [None] * 5
 
     @callback
     def async_setup(self):
-        """Coordinator creation."""
-        self.coordinator = DataUpdateCoordinator(
-            self.hass,
-            _LOGGER,
-            name="WavinSentioDataService",
-            update_method=self.async_update_data,
-            update_interval=self.update_interval,
-        )
-
-    @property
-    def update_interval(self):
-        return UPDATE_DELAY
-
-    async def async_update_data(self):
-        _LOGGER.debug("Auto update self called from Sensors")
-        try:
-            await self._api.update()
-            
-            self._outdoorTemp = self._api.outdoorTemperature
-
-            self._itcData = self._api.getItcData()
-            self._hccData = self._api.getHccData()
-            self._boilerTanks = self._api.getBoilerTanks()
-
-            self._hcsourceData = self._api.hcSourceState
-            
-            for index in range(SentioThermistor.THERMISTOR_START, SentioThermistor.THERMISTOR_MAX):
-                sensor = self._api.getTemperatureSensors(index)
-                _LOGGER.debug("Obtained value for index {0} sensor {1}".format(index, sensor))
-                if sensor != None:
-                    self._temperatureSensors[index - 1] = sensor
-
-        except KeyError as ex:
-            raise UpdateFailed("Missing overview data, skipping update") from ex
+        """Use the shared coordinator created by the climate platform."""
+        self.coordinator = self._api.coordinator
 
     def get_room(self, roomIndex):
         return self._api.getRoom(roomIndex)
         
     def get_outdoorTemp(self):
-        return self._outdoorTemp
-    
-    def get_itcData(self):
-        return self._itcData
+        return self._api.outdoorTemperature
     
     def get_itcCircuit(self, itcIndex):
         return self._api.getItcCircuit(itcIndex)
@@ -373,29 +317,27 @@ class WavinSentioSensorDataService:
     def get_boilerTank(self, index):
         return self._api.getBoilerTankByIndex(index)
     
-    def get_hccData(self):
-        return self._hccData
-    
-    def get_boilerTankData(self):
-        return self._boilerTanks
-    
     def get_hccCircuit(self, hccIndex):
         return self._api.getHccCircuit(hccIndex)
     
     def get_HCSourceData(self):
-        return self._hcsourceData
+        return self._api.hcSourceState
 
     def get_serialNumber(self):
         return self._api.sentioData.serial_number
     
+    def get_firmwareRevision(self):
+        return "FW {0}.{1}".format(self._api.sentioData.firmware_version_major, self._api.sentioData.firmware_version_minor)
+
     def get_temperature_sensor(self, index):
         return self._api.getTemperatureSensors(index)
     
-class WavinItcSensor(SensorEntity):
-    #Representation of a generic Sensor. TODO; make classes and even more generic (ergo, remove the dirty tables)
+class WavinItcSensor(CoordinatorEntity, SensorEntity):
+    #Representation of a generic Sensor.
 
     def __init__(self, hass, itc, dataservice, sensorType:SentioSensorTypes):
         #Initialize the sensor.
+        super().__init__(dataservice.coordinator)
         self._state = None
         self._dataservice = dataservice
         self._itcIndex = itc.index
@@ -413,9 +355,13 @@ class WavinItcSensor(SensorEntity):
             self._attr_precision = 0.1
             self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         
-        #self._attr_state_class = SensorStateClass.MEASUREMENT
         self.update()
 
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Update attributes when the coordinator updates."""
+        self.update()
+        super()._handle_coordinator_update()
 
     def update(self) -> None:
         #Retrieve latest state.
@@ -428,7 +374,13 @@ class WavinItcSensor(SensorEntity):
                 elif itcState == SentioHeatingStates.HEATING:
                     self._attr_native_value = HVACMode.HEAT
                 elif itcState == SentioHeatingStates.COOLING:
-                     self._attr_native_value = HVACMode.COOL  
+                    self._attr_native_value = HVACMode.COOL
+                elif itcState == SentioHeatingStates.BLOCKED_HEATING:
+                    self._attr_native_value = "blocked_heating"
+                elif itcState == SentioHeatingStates.BLOCKED_COOLING:
+                    self._attr_native_value = "blocked_cooling"
+                else:
+                    self._attr_native_value = None
             elif self._sensorType == SentioSensorTypes.ITC_PUMPSTATE:
                 pumpState = local_itc.getPumpState
                 if pumpState == PumpState.PUMP_IDLE:
@@ -448,11 +400,12 @@ class WavinItcSensor(SensorEntity):
         self._native_value = self._attr_native_value
         _LOGGER.debug("Updating {0} {1}".format(self._attr_unique_id, self._attr_native_value))
 
-class WavinHccSensor(SensorEntity):
-    #Representation of a generic Sensor. TODO; make classes and even more generic (ergo, remove the dirty tables)
+class WavinHccSensor(CoordinatorEntity, SensorEntity):
+    #Representation of a generic Sensor.
 
     def __init__(self, hass, hcc, dataservice, sensorType:SentioSensorTypes):
         #Initialize the sensor.
+        super().__init__(dataservice.coordinator)
         self._state = None
         self._dataservice = dataservice
         self._hccIndex = hcc.index
@@ -470,8 +423,13 @@ class WavinHccSensor(SensorEntity):
             self._attr_precision = 0.1
             self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         
-        #self._attr_state_class = SensorStateClass.MEASUREMENT
         self.update()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Update attributes when the coordinator updates."""
+        self.update()
+        super()._handle_coordinator_update()
 
     def update(self) -> None:
         #Retrieve latest state.
@@ -484,7 +442,13 @@ class WavinHccSensor(SensorEntity):
                 elif hccState == SentioHeatingStates.HEATING:
                     self._attr_native_value = HVACMode.HEAT
                 elif hccState == SentioHeatingStates.COOLING:
-                     self._attr_native_value = HVACMode.COOL  
+                    self._attr_native_value = HVACMode.COOL
+                elif hccState == SentioHeatingStates.BLOCKED_HEATING:
+                    self._attr_native_value = "blocked_heating"
+                elif hccState == SentioHeatingStates.BLOCKED_COOLING:
+                    self._attr_native_value = "blocked_cooling"
+                else:
+                    self._attr_native_value = None
             elif self._sensorType == SentioSensorTypes.HCC_PUMPSTATE:
                 pumpState = local_hcc.getPumpState
                 if pumpState == PumpState.PUMP_IDLE:
@@ -504,10 +468,11 @@ class WavinHccSensor(SensorEntity):
         self._native_value = self._attr_native_value
         _LOGGER.debug("Updating {0} {1}".format(self._attr_unique_id, self._attr_native_value))
 
-class WavinBoilerTankSensor(SensorEntity):
+class WavinBoilerTankSensor(CoordinatorEntity, SensorEntity):
     
     def __init__(self, hass, tank, dataservice, sensorType:SentioSensorTypes):
-         #Initialize the sensor.
+        #Initialize the sensor.
+        super().__init__(dataservice.coordinator)
         self._state = None
         self._dataservice = dataservice
         self._boilerIndex = tank.index
@@ -524,9 +489,13 @@ class WavinBoilerTankSensor(SensorEntity):
         self._attr_precision = 0.1
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         
-        #self._attr_state_class = SensorStateClass.MEASUREMENT
         self.update()
 
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Update attributes when the coordinator updates."""
+        self.update()
+        super()._handle_coordinator_update()
 
     def update(self) -> None:
         #Retrieve latest state.
@@ -552,22 +521,13 @@ class WavinSentioOutdoorTemperatureSensor(CoordinatorEntity, SensorEntity):
         self._dataservice = dataservice
 
     @property
-    def should_poll(self):
-        """Return the polling state."""
-        return True
-
-    @property
     def name(self) -> str:
         """Return the name of the sensor."""
         return "Outdoor Temperature" 
-        #self._dataservice.outdoor_temp()["name"]
 
     @property
     def state(self):
         """Return the state of the sensor."""
-    #    #return self._dataservice.outdoor_temp()
-
-        #return int(self._dataservice.get_outdoorTemp())
         self._state = self._dataservice.get_outdoorTemp()
         return self._state
 
@@ -588,8 +548,7 @@ class WavinSentioOutdoorTemperatureSensor(CoordinatorEntity, SensorEntity):
     @property
     def unique_id(self):
         """Return the ID of this device."""
-        return "Invalid Serial"
-        #self._dataservice.get_outdoorTemp()["serialNumber"]
+        return f"Sentio-outdoor-{self._dataservice.get_serialNumber()}"
 
     @property
     def device_info(self):
@@ -597,20 +556,20 @@ class WavinSentioOutdoorTemperatureSensor(CoordinatorEntity, SensorEntity):
         if temp_location is not None:
             return {
                 "identifiers": {
-                    # Serial numbers are unique identifiers within a specific domain
                     (SENTIO_CLIMATE_DOMAIN, self._dataservice.get_serialNumber())
                 },
-                "name": self._name,
+                "name": "Outdoor Temperature",
                 "manufacturer": "Wavin",
                 "model": "Sentio",
                 "sw_version": self._dataservice.get_firmwareRevision(),
             }
         return
     
-class WavinHCSourceTemperatureSensor(SensorEntity):
+class WavinHCSourceTemperatureSensor(CoordinatorEntity, SensorEntity):
 
     def __init__(self, dataservice):
         #Initialize the sensor.
+        super().__init__(dataservice.coordinator)
         self._state = None
         self._dataservice = dataservice
         self._name = "HC Source"
@@ -620,8 +579,13 @@ class WavinHCSourceTemperatureSensor(SensorEntity):
         self._native_value = None
         self._attr_native_value = None
 
-        #self._attr_state_class = SensorStateClass.MEASUREMENT
         self.update()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Update attributes when the coordinator updates."""
+        self.update()
+        super()._handle_coordinator_update()
     
     def update(self) -> None:       
         state = self._dataservice.get_HCSourceData()
@@ -658,11 +622,6 @@ class WavinSentioThermistorTemperatureSensor(CoordinatorEntity, SensorEntity):
         self._name = "Thermistor T{0}".format(self._index)
 
     @property
-    def should_poll(self):
-        """Return the polling state."""
-        return True
-
-    @property
     def name(self) -> str:
         """Return the name of the sensor."""
         return self._name
@@ -693,7 +652,6 @@ class WavinSentioThermistorTemperatureSensor(CoordinatorEntity, SensorEntity):
         if temp_location is not None:
             return {
                 "identifiers": {
-                    # Serial numbers are unique identifiers within a specific domain
                     (SENTIO_CLIMATE_DOMAIN, self._dataservice.get_serialNumber())
                 },
                 "name": self._name,
@@ -703,13 +661,12 @@ class WavinSentioThermistorTemperatureSensor(CoordinatorEntity, SensorEntity):
             }
         return
     
-class WavinSentioRoomSensor(SensorEntity):
-    """Representation of an Outdoor Temperature Sensor."""
+class WavinSentioRoomSensor(CoordinatorEntity, SensorEntity):
+    """Representation of a Room Sensor."""
 
     def __init__(self, room, dataservice, sensorType:SentioSensorTypes):
         """Initialize the sensor."""
-        #super().__init__(dataservice.coordinator)
-        #self._state = None
+        super().__init__(dataservice.coordinator)
         self._dataservice = dataservice
         self._roomcode = room.index
         self._sensorType = sensorType
@@ -734,14 +691,8 @@ class WavinSentioRoomSensor(SensorEntity):
             self._attr_device_class = SensorDeviceClass.TEMPERATURE
         
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        #self.update()
+        self.update()
 
-    @callback
-    #def _handle_coordinator_update(self) -> None:
-    #    """Update attributes when the coordinator updates."""
-    #    _LOGGER.debug("Calling coordinator update from roomsensor class ")
-    #    self.update()
-    #    super()._handle_coordinator_update()
 
     def update(self) -> None:
         """Retrieve latest state."""

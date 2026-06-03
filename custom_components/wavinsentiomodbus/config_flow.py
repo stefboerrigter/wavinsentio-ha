@@ -63,7 +63,7 @@ class WavinSentioConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         schema = vol.Schema(
             {
-                vol.Required(CONF_HOST, default="192.168.188.14", description="host"): str, #TODO REMOVE DEFAULT
+                vol.Required(CONF_HOST, description="host"): str,
                 vol.Required(CONF_PORT, default=502, description="port"): int,
                 vol.Required(CONF_SLAVE, default=1, description="slave"): int,
             }

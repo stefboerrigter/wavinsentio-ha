@@ -2,7 +2,7 @@ import logging
 
 from homeassistant import config_entries, core
 
-from homeassistant.exceptions import ConfigEntryAuthFailed, Unauthorized
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady, Unauthorized
 
 from .const import DOMAIN
 
@@ -19,28 +19,38 @@ async def async_setup_entry(
 ) -> bool:
     """Set up platform from a ConfigEntry."""
     hass.data.setdefault(DOMAIN, {})
-    #hass_data = dict(entry.data)
     _LOGGER.debug("__INIT__ Setting up with data --> {0}".format(entry.data))
-    
-    hass.data[DOMAIN] = SentioApiHandler(entry.data[CONF_TYPE], entry.data[CONF_HOST], entry.data[CONF_PORT], entry.data[CONF_SLAVE], logging.DEBUG, hass)
-    #try:      
-    #    api = await hass.async_add_executor_job(
-    #        SentioModbus, entry.data[CONF_TYPE], entry.data[CONF_HOST], entry.data[CONF_PORT], entry.data[CONF_SLAVE], entry.data[CONF_PORT], logging.DEBUG
-    #    )
-    #    
-    #    status = await hass.async_add_executor_job(api.connect)
-    #
-    #    if status != 0:
-    #        raise ConfigEntryAuthFailed("Failed to connect")
-    #
-    #except NoConnectionPossible as err:
-    #    raise ConfigEntryAuthFailed(err) from err
 
-    hass.async_create_task(
-        hass.config_entries.async_forward_entry_setups(entry, ["climate"])
+    handler = SentioApiHandler(
+        entry.data[CONF_TYPE], entry.data[CONF_HOST],
+        entry.data[CONF_PORT], entry.data[CONF_SLAVE], logging.DEBUG, hass
     )
+    hass.data[DOMAIN][entry.entry_id] = handler
+
+    try:
+        connected = await handler.connect()
+        if not connected:
+            raise ConfigEntryNotReady("Failed to connect to Wavin Sentio")
+        initialized = await handler.initialize()
+        if not initialized:
+            raise ConfigEntryNotReady("Failed to initialize Wavin Sentio")
+    except (AttributeError, NoConnectionPossible) as err:
+        raise ConfigEntryNotReady(str(err)) from err
+
+    await hass.config_entries.async_forward_entry_setups(entry, ["climate"])
 
     return True
+
+
+async def async_unload_entry(
+    hass: HomeAssistant, entry: config_entries.ConfigEntry
+) -> bool:
+    """Unload a config entry and close the Modbus connection."""
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, ["climate", "sensor"])
+    if unload_ok:
+        handler: SentioApiHandler = hass.data[DOMAIN].pop(entry.entry_id)
+        await hass.async_add_executor_job(handler._api.disconnect)
+    return unload_ok
 
 
 class SentioApiHandler:
@@ -51,7 +61,8 @@ class SentioApiHandler:
         self._initialized = False
         self._value = 0
         self._hass = hass
-        self._api = SentioModbus(type, host, port, slave, 0, loglevel)
+        self._api = SentioModbus(ModbusType(type), host, port, slave, 0, loglevel)
+        self.coordinator = None
         _LOGGER.debug("Sentio API class {0}".format(self._value))
 
     async def connect(self):

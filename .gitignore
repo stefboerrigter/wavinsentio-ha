@@ -1,0 +1,45 @@
+# === Python ===
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env
+
+# === Testing ===
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# === Type checking / linting ===
+.mypy_cache/
+.ruff_cache/
+pyrightconfig.json
+
+# === Home Assistant ===
+# Local HA dev instance artefacts (if running HA locally for testing)
+home-assistant.log*
+home-assistant_v2.db*
+.HA_VERSION
+.storage/
+secrets.yaml
+deps/
+tts/
+
+# === IDE / editor ===
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.iml
+
+# === OS ===
+.DS_Store
+Thumbs.db

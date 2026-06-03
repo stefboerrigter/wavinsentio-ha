@@ -34,9 +34,7 @@ from homeassistant.components.climate.const import (
     ATTR_HUMIDITY,
 )
 
-from homeassistant.exceptions import ConfigEntryAuthFailed
-
-import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers import entity_registry as er
 
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
@@ -54,7 +52,7 @@ from .const import(
 
 #from WavinSentioInterface.SentioApi import SentioApi, NoConnectionPossible
 from WavinSentioModbus.SentioApi import SentioModbus, NoConnectionPossible, ModbusType 
-from WavinSentioModbus.SentioTypes import SentioHeatingStates, SentioRoomMode, SentioRoomPreset
+from WavinSentioModbus.SentioTypes import SentioHeatingStates, SentioRoomMode
 from WavinSentioModbus.SentioApi import SentioRoom
 
 from . import SentioApiHandler
@@ -87,30 +85,23 @@ BLOCKED_STATES: Final = (
     SentioHeatingStates.BLOCKED_COOLING,
 )
 
-
-PRESET_MODES = {
-    "Eco": {"profile": SentioRoomPreset.RP_ECO},
-    "Comfort": {"profile": SentioRoomPreset.RP_COMFORT},
-    "Extracomfort": {"profile": SentioRoomPreset.RP_EXTRA_COMFORT},
-}
-
 UPDATE_DELAY = timedelta(seconds=30)
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    rooms=None
+    sentioApi = hass.data[SENTIO_CLIMATE_DOMAIN][entry.entry_id]
 
-    sentioApi = hass.data[SENTIO_CLIMATE_DOMAIN]
-    try:      
-        status = await sentioApi.connect()
-        if status != True: 
-            raise ConfigEntryAuthFailed("Failed to connect")
-        status = await sentioApi.initialize()
-        if status != True:
-            raise ConfigEntryAuthFailed("Failed to initialize")
-        await sentioApi.update()
+    # connect() and initialize() already called in __init__.py async_setup_entry
 
-    except NoConnectionPossible as err:
-        raise ConfigEntryAuthFailed(err) from err
+    # Migrate outdoor sensor unique_id from old "Invalid Serial" stub to serial-based id.
+    serial = sentioApi.sentioData.serial_number
+    if serial:
+        registry = er.async_get(hass)
+        old_uid = "Invalid Serial"
+        new_uid = f"Sentio-outdoor-{serial}"
+        for entity_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
+            if entity_entry.unique_id == old_uid:
+                registry.async_update_entity(entity_entry.entity_id, new_unique_id=new_uid)
+                _LOGGER.debug("Migrated outdoor sensor unique_id: %s → %s", old_uid, new_uid)
 
     rooms = sentioApi.getAvailableRooms()
     #_LOGGER.debug("Found rooms: {0}".format(rooms))
@@ -119,7 +110,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
     )
 
     dataservice.async_setup()
-    await dataservice.coordinator.async_refresh()
+    sentioApi.coordinator = dataservice.coordinator
+    await dataservice.coordinator.async_config_entry_first_refresh()
 
     entities = []
     for room in rooms:
@@ -185,10 +177,6 @@ class WavinSentioClimateDataService:
         room = self._api.getRoom(roomIndex)
         await self.hass.async_add_executor_job(room.setRoomSetpoint, temperature)
 
-    async def set_new_profile(self, roomIndex, profile):
-        _LOGGER.debug("Setting profile: {0} -> {1}".format(roomIndex, profile))
-        await self.hass.async_add_executor_job(self._api.set_profile, roomIndex, profile)
-
 
 class WavinSentioEntity(CoordinatorEntity, ClimateEntity):
     """Representation of a Wavin Sentio device."""
@@ -205,18 +193,19 @@ class WavinSentioEntity(CoordinatorEntity, ClimateEntity):
         self._dataservice = dataservice
 
         self._enable_turn_on_off_backwards_compatibility = False
-        self._attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.TURN_OFF | ClimateEntityFeature.TURN_ON 
+        self._attr_supported_features = (
+            ClimateEntityFeature.TARGET_TEMPERATURE
+            | ClimateEntityFeature.TURN_OFF
+            | ClimateEntityFeature.TURN_ON
+        )
         self._attr_hvac_modes = [HVACMode.AUTO, HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL]
         self._attr_hvac_mode = HVACMode.AUTO
         self._attr_min_temp = DEFAULT_MIN_TEMPERATURE
         self._attr_max_temp = DEFAULT_MAX_TEMPERATURE
-        self._attr_preset_modes = ["Manual", "Auto"]
-        self._attr_precision = 0.1
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
 
         self._current_temperature = None
         self._current_humidity = None
-        self._preset_mode = "Manual"
         self._hvac_mode = HVACMode.OFF
         self._away = False
         self._on = True
@@ -244,7 +233,7 @@ class WavinSentioEntity(CoordinatorEntity, ClimateEntity):
                     temp_room.setRoomMode, SentioRoomMode.MANUAL
                 )
         await self._dataservice.set_new_temperature(self._roomcode, temperature)
-        self.updateSentioData()
+        await self._dataservice.coordinator.async_request_refresh()
 
     async def async_turn_off(self) -> None:
         await self.async_set_hvac_mode(HVACMode.OFF)
@@ -270,7 +259,7 @@ class WavinSentioEntity(CoordinatorEntity, ClimateEntity):
                     _LOGGER.debug("Failed to get room with index {0}".format(self._roomcode))
             else:
                 _LOGGER.debug("Hvac mode follows, not settable {0}".format(hvac_mode))
-        self.updateSentioData()
+        await self._dataservice.coordinator.async_request_refresh()
 
     def updateSentioData(self) -> None:
         """Retrieve latest state."""
