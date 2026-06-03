@@ -51,7 +51,7 @@ class SentioApiHandler:
         self._initialized = False
         self._value = 0
         self._hass = hass
-        self._api = SentioModbus(type, host, port, slave, port, loglevel)
+        self._api = SentioModbus(type, host, port, slave, 0, loglevel)
         _LOGGER.debug("Sentio API class {0}".format(self._value))
 
     async def connect(self):
@@ -84,7 +84,7 @@ class SentioApiHandler:
             await self._hass.async_add_executor_job(self._api.updateData)
     
     async def setRoomTemperature(self, roomIndex, temperature):
-        room = self.getRoom(self, roomIndex)
+        room = self.getRoom(roomIndex)
         await self._hass.async_add_executor_job(room.setRoomSetpoint, temperature)
 
     @property
