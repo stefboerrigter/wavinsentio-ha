@@ -693,6 +693,11 @@ class WavinSentioRoomSensor(CoordinatorEntity, SensorEntity):
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self.update()
 
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Update attributes when the coordinator updates."""
+        self.update()
+        super()._handle_coordinator_update()
 
     def update(self) -> None:
         """Retrieve latest state."""
